@@ -60,9 +60,15 @@ function App() {
                 responseType: 'blob'
             });
 
-            const url = window.URL.createObjectURL(new Blob([response.data]));
+            // Asegurar que el Blob tenga el tipo MIME correcto para Excel (.xlsx)
+            // Usamos response.data directamente si ya es un Blob, o lo envolvemos especificando el tipo.
+            const blob = new Blob([response.data], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
+            link.style.display = 'none';
 
             // Nombre de archivo descriptivo
             const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -75,7 +81,13 @@ function App() {
             link.setAttribute('download', nombreArchivo);
             document.body.appendChild(link);
             link.click();
-            link.remove();
+
+            // Limpieza
+            setTimeout(() => {
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+
             alert('¡Excel generado y descargado con éxito! Los registros han sido marcados para no repetirse.');
         } catch (err) {
             let detalle = 'Error desconocido';
