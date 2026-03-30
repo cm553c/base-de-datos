@@ -134,17 +134,30 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         params.append(f"%{edad.strip()}%")
 
     id_col = next((c for c in columnas if c.lower() == "curp"), columnas[0])
-    where_clause = " WHERE " + " AND ".join(condiciones) if condiciones else " WHERE 1=1"
-    sql_select = f'"{id_col}"' if solo_curp else "*"
+    
+    # Construir WHERE con prefijos para el JOIN
+    condiciones_con_prefijo = []
+    if q and q.strip():
+        search_conds = " OR ".join([f"t.\"{col}\" LIKE ?" for col in columnas])
+        condiciones_con_prefijo.append(f"({search_conds})")
+    if sexo and sexo.strip():
+        condiciones_con_prefijo.append("t.\"sexo\" LIKE ?")
+    if edad and edad.strip():
+        condiciones_con_prefijo.append("CAST(t.\"edad\" AS TEXT) LIKE ?")
+    
+    where_sql = " AND ".join(condiciones_con_prefijo) if condiciones_con_prefijo else "1=1"
     
     # Evitar exportar CURPs vacíos si se pidió solo CURP
-    filtro_vacios = f" AND \"{id_col}\" IS NOT NULL AND \"{id_col}\" != ''" if solo_curp else ""
+    filtro_vacios = f" AND t.\"{id_col}\" IS NOT NULL AND t.\"{id_col}\" != ''" if solo_curp else ""
+    
+    sql_select = f't."{id_col}"' if solo_curp else "t.*"
     
     sql = f"""
-        SELECT {sql_select} FROM {TABLA_PRINCIPAL} 
-        {where_clause} 
+        SELECT {sql_select} FROM {TABLA_PRINCIPAL} t
+        LEFT JOIN historial_exportacion h ON t."{id_col}" = h.registro_id
+        WHERE h.registro_id IS NULL
+        AND {where_sql}
         {filtro_vacios}
-        AND "{id_col}" NOT IN (SELECT registro_id FROM historial_exportacion)
         LIMIT ?
     """
     params.append(limite)
@@ -181,9 +194,10 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         df.to_excel(ruta_excel, index=False)
         
         cursor = conn.cursor()
-        for val_id in df[id_col]:
-            cursor.execute("INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)", 
-                           (str(val_id), datetime.now()))
+        ahora = datetime.now()
+        data_to_insert = [(str(val_id), ahora) for val_id in df[id_col]]
+        cursor.executemany("INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)", 
+                           data_to_insert)
         conn.commit()
         return FileResponse(ruta_excel, filename=nombre_archivo)
     except HTTPException as he:

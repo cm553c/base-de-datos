@@ -78,7 +78,25 @@ function App() {
             link.remove();
             alert('¡Excel generado y descargado con éxito! Los registros han sido marcados para no repetirse.');
         } catch (err) {
-            const detalle = err.response?.data?.detail || err.message || 'Error desconocido';
+            let detalle = 'Error desconocido';
+
+            if (err.response?.data instanceof Blob && err.response.data.type === 'application/json') {
+                // Leer el blob de error como texto
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try {
+                        const errorData = JSON.parse(reader.result);
+                        alert(`Error: ${errorData.detail || 'Error en el servidor'}`);
+                    } catch (e) {
+                        alert(`Error: ${err.message}`);
+                    }
+                };
+                reader.readAsText(err.response.data);
+                return; // Salir para evitar el alert de abajo
+            } else {
+                detalle = err.response?.data?.detail || err.message || 'Error desconocido';
+            }
+
             if (err.response?.status === 404) {
                 alert(`AVISO: ${detalle}\n\nSugerencia: Cambia los filtros o usa el botón de "Resetear historial" si necesitas volver a descargarlos.`);
             } else {
