@@ -48,28 +48,60 @@ function App() {
     const handleExportar = async (soloCurp = false) => {
         setExportando(true);
         try {
-            // Usamos un método de descarga directo para que el navegador use 
-            // los encabezados del servidor (filename y extension) correctamente.
-            const params = new URLSearchParams({
-                q: query || '',
-                sexo: filtros.sexo,
-                edad: filtros.edad,
-                limite: limite,
-                solo_curp: soloCurp
+            // Construimos el nombre en el cliente, sin depender de encabezados del servidor
+            const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const hora = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
+            const genero = filtros.sexo === 'H' ? 'Hombre' : (filtros.sexo === 'M' ? 'Mujer' : '');
+            const infoSexo = genero ? `_${genero}` : '';
+            const infoEdad = filtros.edad ? `_Edad${filtros.edad}` : '';
+            const tipo = soloCurp ? 'SoloCURP' : 'Exportacion';
+            const nombreArchivo = `${tipo}${infoSexo}${infoEdad}_${fecha}_${hora}.xlsx`;
+
+            // arraybuffer es más confiable que blob para forzar el tipo correcto
+            const response = await axios.get(`${API_URL}/exportar`, {
+                params: { q: query || '', sexo: filtros.sexo, edad: filtros.edad, limite: limite, solo_curp: soloCurp },
+                responseType: 'arraybuffer'
             });
 
-            // Redirigir a la URL de exportación para que el navegador maneje la descarga nativamente
-            window.location.href = `${API_URL}/exportar?${params.toString()}`;
+            // Crear el Blob con el tipo MIME de Excel
+            const blob = new Blob([response.data], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
 
-            // Como no podemos saber cuándo termina con este método, desactivamos el estado después de un momento
-            setTimeout(() => setExportando(false), 2000);
+            // El atributo link.download SIEMPRE sobreescribe el nombre del servidor
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = nombreArchivo;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
 
+            alert(`✅ Descargado como: ${nombreArchivo}`);
         } catch (err) {
-            const detalle = err.response?.data?.detail || err.message || 'Error desconocido';
-            alert(`Error: ${detalle}`);
+            // Manejar errores que vienen como arraybuffer
+            if (err.response?.data instanceof ArrayBuffer) {
+                const text = new TextDecoder().decode(err.response.data);
+                try {
+                    const json = JSON.parse(text);
+                    const msg = json.detail || 'Error del servidor';
+                    if (err.response.status === 404) {
+                        alert(`AVISO: ${msg}\n\nCambia los filtros o resetea el historial.`);
+                    } else {
+                        alert(`Error: ${msg}`);
+                    }
+                } catch {
+                    alert(`Error: ${err.message}`);
+                }
+            } else {
+                alert(`Error: ${err.response?.data?.detail || err.message || 'Error desconocido'}`);
+            }
+        } finally {
             setExportando(false);
         }
     };
+
 
     const handleLimpiarHistorial = async () => {
         if (!confirm('¿Estás seguro? Esto borrará el registro de qué datos has mandado antes (permitirá repetirlos).')) return;
@@ -87,7 +119,7 @@ function App() {
                 <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     Buscador BCS 19
                     <span style={{ fontSize: '0.8rem', background: '#3b82f6', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
-                        v2.3 (COMPATIBILIDAD TOTAL)
+                        v2.4 (NOMBRE CORRECTO)
                     </span>
                 </h1>
                 <p style={{ color: '#475569' }}>Seguimiento inteligente y exportación directa optimizada</p>
