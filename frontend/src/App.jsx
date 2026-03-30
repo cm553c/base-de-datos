@@ -57,18 +57,33 @@ function App() {
             const tipo = soloCurp ? 'SoloCURP' : 'Exportacion';
             const nombreArchivo = `${tipo}${infoSexo}${infoEdad}_${fecha}_${hora}.xlsx`;
 
-            // arraybuffer es más confiable que blob para forzar el tipo correcto
             const response = await axios.get(`${API_URL}/exportar`, {
                 params: { q: query || '', sexo: filtros.sexo, edad: filtros.edad, limite: limite, solo_curp: soloCurp },
                 responseType: 'arraybuffer'
             });
 
-            // Crear el Blob con el tipo MIME de Excel
+            // ⚠️ CLAVE: Verificar que la respuesta sea Excel antes de descargar
+            const contentType = response.headers['content-type'] || '';
+            const isExcel = contentType.includes('spreadsheet') || contentType.includes('octet-stream') || contentType.includes('excel');
+
+            if (!isExcel) {
+                // La respuesta es JSON (probablemente un error del servidor disfrazado de éxito)
+                const text = new TextDecoder().decode(response.data);
+                try {
+                    const json = JSON.parse(text);
+                    alert(`AVISO: ${json.detail || 'Sin registros nuevos. Cambia los filtros o resetea el historial.'}`);
+                } catch {
+                    alert('Error: El servidor no devolvió un archivo Excel válido.');
+                }
+                return;
+            }
+
+            // Crear el Blob con el tipo MIME de Excel correcto
             const blob = new Blob([response.data], {
                 type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             });
 
-            // El atributo link.download SIEMPRE sobreescribe el nombre del servidor
+            // El atributo link.download sobreescribe el nombre del servidor
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
@@ -87,7 +102,7 @@ function App() {
                     const json = JSON.parse(text);
                     const msg = json.detail || 'Error del servidor';
                     if (err.response.status === 404) {
-                        alert(`AVISO: ${msg}\n\nCambia los filtros o resetea el historial.`);
+                        alert(`AVISO: ${msg}\n\nCambia los filtros o usa "Resetear historial" para volver a exportar los mismos.`);
                     } else {
                         alert(`Error: ${msg}`);
                     }
@@ -119,7 +134,7 @@ function App() {
                 <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     Buscador BCS 19
                     <span style={{ fontSize: '0.8rem', background: '#3b82f6', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
-                        v2.4 (NOMBRE CORRECTO)
+                        v2.5 (VALIDACIÓN COMPLETA)
                     </span>
                 </h1>
                 <p style={{ color: '#475569' }}>Seguimiento inteligente y exportación directa optimizada</p>
