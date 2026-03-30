@@ -83,9 +83,14 @@ function App() {
 
     return (
         <div className="container">
-            <header>
-                <h1>Buscador BCS 19 <span style={{ fontSize: '0.8rem', verticalAlign: 'middle', background: '#e2e8f0', padding: '2px 8px', borderRadius: '12px', color: '#475569' }}>v2.1</span></h1>
-                <p style={{ color: 'var(--text-muted)' }}>Seguimiento inteligente y exportación sin duplicados</p>
+            <header style={{ background: '#f0f9ff', padding: '1.5rem', borderRadius: '1rem', borderBottom: '2px solid #3b82f6', marginBottom: '1.5rem' }}>
+                <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    Buscador BCS 19
+                    <span style={{ fontSize: '0.8rem', background: '#3b82f6', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
+                        v2.2 (CONEXIÓN SEGURA)
+                    </span>
+                </h1>
+                <p style={{ color: '#475569' }}>Seguimiento inteligente y exportación directa optimizada</p>
             </header>
 
             <section className="busqueda-container">

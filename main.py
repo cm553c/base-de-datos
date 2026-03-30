@@ -190,7 +190,11 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
         nombre_archivo = f"{prefijo}_{fecha_str}.xlsx"
         
-        ruta_excel = os.path.join(os.getcwd(), nombre_archivo)
+        # Usar /tmp o el directorio temporal del sistema para evitar problemas de permisos
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        ruta_excel = os.path.join(temp_dir, nombre_archivo)
+        
         df.to_excel(ruta_excel, index=False)
         
         cursor = conn.cursor()
@@ -199,7 +203,14 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         cursor.executemany("INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)", 
                            data_to_insert)
         conn.commit()
-        return FileResponse(ruta_excel, filename=nombre_archivo)
+        
+        # Retornar el archivo con encabezados explícitos para forzar la descarga con nombre
+        return FileResponse(
+            ruta_excel, 
+            filename=nombre_archivo,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename=\"{nombre_archivo}\""}
+        )
     except HTTPException as he:
         raise he
     except Exception as e:
