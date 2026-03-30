@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+*.xlsx
+*.accdb
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# SQLite
+# Descomentar la siguiente línea si prefieres NO subir la base de datos (y usar una externa)
+# datos_búsqueda.sqlite
+
+# System
+.DS_Store
+Thumbs.db
+backend.log

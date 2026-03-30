@@ -1,0 +1,10 @@
+import sqlite3
+conn = sqlite3.connect(r'd:\proyecto acces\datos_búsqueda.sqlite')
+cursor = conn.cursor()
+cursor.execute('SELECT COUNT(*) FROM "Baja  California  Sur 19" WHERE TRIM(sexo) = "M"')
+print('Total Mujeres:', cursor.fetchone()[0])
+cursor.execute('SELECT COUNT(*) FROM "Baja  California  Sur 19" WHERE TRIM(sexo) = "H"')
+print('Total Hombres:', cursor.fetchone()[0])
+cursor.execute('SELECT COUNT(*) FROM "Baja  California  Sur 19" WHERE CAST(edad AS INTEGER) = 20')
+print('Total Edad 20:', cursor.fetchone()[0])
+conn.close()
