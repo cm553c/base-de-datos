@@ -87,7 +87,7 @@ function App() {
                 <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     Buscador BCS 19
                     <span style={{ fontSize: '0.8rem', background: '#3b82f6', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
-                        v2.2 (CONEXIÓN SEGURA)
+                        v2.3 (COMPATIBILIDAD TOTAL)
                     </span>
                 </h1>
                 <p style={{ color: '#475569' }}>Seguimiento inteligente y exportación directa optimizada</p>

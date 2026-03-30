@@ -16,6 +16,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Configuración de base de datos dinámica
@@ -204,12 +205,11 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
                            data_to_insert)
         conn.commit()
         
-        # Retornar el archivo con encabezados explícitos para forzar la descarga con nombre
+        # Retornar el archivo con el parámetro filename que FastAPI usa para el encabezado
         return FileResponse(
             ruta_excel, 
             filename=nombre_archivo,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename=\"{nombre_archivo}\""}
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     except HTTPException as he:
         raise he
