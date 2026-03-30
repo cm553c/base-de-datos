@@ -48,73 +48,25 @@ function App() {
     const handleExportar = async (soloCurp = false) => {
         setExportando(true);
         try {
-            // Enviar todos los criterios como parámetros de consulta (Query Params)
-            const response = await axios.get(`${API_URL}/exportar`, {
-                params: {
-                    q: query || '',
-                    sexo: filtros.sexo,
-                    edad: filtros.edad,
-                    limite: limite,
-                    solo_curp: soloCurp
-                },
-                responseType: 'blob'
+            // Usamos un método de descarga directo para que el navegador use 
+            // los encabezados del servidor (filename y extension) correctamente.
+            const params = new URLSearchParams({
+                q: query || '',
+                sexo: filtros.sexo,
+                edad: filtros.edad,
+                limite: limite,
+                solo_curp: soloCurp
             });
 
-            // Asegurar que el Blob tenga el tipo MIME correcto para Excel (.xlsx)
-            // Usamos response.data directamente si ya es un Blob, o lo envolvemos especificando el tipo.
-            const blob = new Blob([response.data], {
-                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            });
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.style.display = 'none';
+            // Redirigir a la URL de exportación para que el navegador maneje la descarga nativamente
+            window.location.href = `${API_URL}/exportar?${params.toString()}`;
 
-            // Nombre de archivo descriptivo
-            const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-            const genero = filtros.sexo === 'H' ? 'Hombre' : (filtros.sexo === 'M' ? 'Mujer' : '');
-            const infoSexo = genero ? `_${genero}` : '';
-            const infoEdad = filtros.edad ? `_Edad${filtros.edad}` : '';
-            const tipo = soloCurp ? 'SoloCURP' : 'Exportacion';
-            const nombreArchivo = `${tipo}${infoSexo}${infoEdad}_${fecha}.xlsx`;
+            // Como no podemos saber cuándo termina con este método, desactivamos el estado después de un momento
+            setTimeout(() => setExportando(false), 2000);
 
-            link.setAttribute('download', nombreArchivo);
-            document.body.appendChild(link);
-            link.click();
-
-            // Limpieza
-            setTimeout(() => {
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(url);
-            }, 100);
-
-            alert('¡Excel generado y descargado con éxito! Los registros han sido marcados para no repetirse.');
         } catch (err) {
-            let detalle = 'Error desconocido';
-
-            if (err.response?.data instanceof Blob && err.response.data.type === 'application/json') {
-                // Leer el blob de error como texto
-                const reader = new FileReader();
-                reader.onload = () => {
-                    try {
-                        const errorData = JSON.parse(reader.result);
-                        alert(`Error: ${errorData.detail || 'Error en el servidor'}`);
-                    } catch (e) {
-                        alert(`Error: ${err.message}`);
-                    }
-                };
-                reader.readAsText(err.response.data);
-                return; // Salir para evitar el alert de abajo
-            } else {
-                detalle = err.response?.data?.detail || err.message || 'Error desconocido';
-            }
-
-            if (err.response?.status === 404) {
-                alert(`AVISO: ${detalle}\n\nSugerencia: Cambia los filtros o usa el botón de "Resetear historial" si necesitas volver a descargarlos.`);
-            } else {
-                alert(`Error: ${detalle}`);
-            }
-        } finally {
+            const detalle = err.response?.data?.detail || err.message || 'Error desconocido';
+            alert(`Error: ${detalle}`);
             setExportando(false);
         }
     };
@@ -132,7 +84,7 @@ function App() {
     return (
         <div className="container">
             <header>
-                <h1>Buscador BCS 19</h1>
+                <h1>Buscador BCS 19 <span style={{ fontSize: '0.8rem', verticalAlign: 'middle', background: '#e2e8f0', padding: '2px 8px', borderRadius: '12px', color: '#475569' }}>v2.1</span></h1>
                 <p style={{ color: 'var(--text-muted)' }}>Seguimiento inteligente y exportación sin duplicados</p>
             </header>
 
