@@ -201,13 +201,47 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
     
     conn = sqlite3.connect(DB_PATH)
     try:
-        df = pd.read_sql_query(sql, conn, params=params)
-        if df.empty:
+        # 1. Obtener registros disponibles de forma atómica (usando una transacción manual)
+        cursor = conn.cursor()
+        cursor.execute("BEGIN TRANSACTION")
+        
+        # Primero identificamos los IDs que se van a exportar
+        sql_ids = f"""
+            SELECT t."{id_col}" FROM {TABLA_PRINCIPAL} t
+            LEFT JOIN historial_exportacion h ON t."{id_col}" = h.registro_id
+            WHERE h.registro_id IS NULL
+            AND {where_sql}
+            {filtro_vacios}
+            LIMIT ?
+        """
+        cursor.execute(sql_ids, params)
+        ids_a_exportar = [row[0] for row in cursor.fetchall()]
+
+        if not ids_a_exportar:
+            cursor.execute("ROLLBACK")
             msg = "No se encontraron registros NUEVOS con esos filtros."
             if solo_curp:
                 msg = "No hay CURPs nuevos para exportar con estos filtros. Todos los registros coincidentes ya fueron exportados anteriormente."
             raise HTTPException(status_code=404, detail=msg)
+
+        # 2. Insertar inmediatamente en el historial para "bloquearlos"
+        ahora = datetime.now()
+        data_to_insert = [(str(val_id), ahora) for val_id in ids_a_exportar]
+        cursor.executemany("INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)", 
+                           data_to_insert)
         
+        # 3. Commit de la reserva antes de generar el Excel
+        conn.commit()
+
+        # 4. Ahora sí, leer todos los datos de esos IDs específicos para el Excel
+        id_placeholders = ",".join(["?"] * len(ids_a_exportar))
+        sql_datos = f"SELECT * FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" IN ({id_placeholders})"
+        df = pd.read_sql_query(sql_datos, conn, params=ids_a_exportar)
+        
+        # Si se pidió solo CURP, filtrar columnas
+        if solo_curp:
+            df = df[[id_col]]
+            
         # Limpiar formato de fecha en el DataFrame
         if "fecnac" in df.columns:
             df["fecnac"] = df["fecnac"].astype(str).str.split(" ").str[0]
@@ -225,21 +259,13 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
         nombre_archivo = f"{prefijo}_{fecha_str}.xlsx"
         
-        # Usar /tmp o el directorio temporal del sistema para evitar problemas de permisos
+        # Guardar en archivo temporal
         import tempfile
         temp_dir = tempfile.gettempdir()
         ruta_excel = os.path.join(temp_dir, nombre_archivo)
-        
         df.to_excel(ruta_excel, index=False)
         
-        cursor = conn.cursor()
-        ahora = datetime.now()
-        data_to_insert = [(str(val_id), ahora) for val_id in df[id_col]]
-        cursor.executemany("INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)", 
-                           data_to_insert)
-        conn.commit()
-        
-        # Retornar el archivo con el parámetro filename que FastAPI usa para el encabezado
+        # Retornar el archivo
         return FileResponse(
             ruta_excel, 
             filename=nombre_archivo,
@@ -255,17 +281,8 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
 
 @app.post("/limpiar-historial")
 def limpiar_historial():
-    print(">>> SOLICITUD: Limpiar historial de exportación")
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM historial_exportacion")
-        conn.commit()
-        return {"mensaje": "Historial de exportación limpiado con éxito. Ahora puedes volver a exportar los mismos datos."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
+    # Deshabilitado por orden estricta: No se pueden duplicar CURPs JAMÁS.
+    raise HTTPException(status_code=403, detail="La limpieza de historial ha sido deshabilitada para garantizar la unicidad absoluta de los datos.")
 
 if __name__ == "__main__":
     import uvicorn

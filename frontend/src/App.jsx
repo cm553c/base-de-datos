@@ -229,10 +229,7 @@ function App() {
             </section>
 
             <div className="resultados-stats">
-                <span>{total} registros encontrados | Seguimiento activo</span>
-                <button onClick={handleLimpiarHistorial} className="btn-limpiar">
-                    🔄 Resetear historial para pruebas
-                </button>
+                <span>{total} registros encontrados | Seguimiento de unicidad estricto activo</span>
             </div>
 
             <div className="table-container">
