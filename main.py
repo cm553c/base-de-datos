@@ -67,15 +67,15 @@ def obtener_estadisticas():
              
         id_col = next((c for c in columnas if c.lower() == "curp"), columnas[0])
 
-        # Total de CURPs en la base principal
-        cursor.execute(f"SELECT COUNT(*) FROM {TABLA_PRINCIPAL}")
+        # Total de PERSONAS ÚNICAS (CURPs) en la base principal
+        cursor.execute(f"SELECT COUNT(DISTINCT \"{id_col}\") FROM {TABLA_PRINCIPAL}")
         total_base = cursor.fetchone()[0]
         
-        # Total de CURPs en la base actual que YA han sido exportados (intersección)
+        # Total de PERSONAS ÚNICAS que ya han sido exportadas
         sql_usados = f"""
-            SELECT COUNT(*) 
+            SELECT COUNT(DISTINCT t.\"{id_col}\") 
             FROM {TABLA_PRINCIPAL} t
-            INNER JOIN historial_exportacion h ON t."{id_col}" = h.registro_id
+            INNER JOIN historial_exportacion h ON t.\"{id_col}\" = h.registro_id
         """
         cursor.execute(sql_usados)
         total_usados = cursor.fetchone()[0]
