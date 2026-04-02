@@ -150,18 +150,21 @@ function App() {
     return (
         <div className="container">
             <header style={{ background: '#f0f9ff', padding: '1.5rem', borderRadius: '1rem', borderBottom: '2px solid #3b82f6', marginBottom: '1.5rem' }}>
-                <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#1e293b' }}>
                     Buscador Aguascalientes 19
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                        <span style={{ fontSize: '0.8rem', background: '#3b82f6', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
-                            {stats.total_base.toLocaleString()} Total
-                        </span>
-                        <span style={{ fontSize: '0.8rem', background: '#ef4444', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
-                            {stats.total_usados.toLocaleString()} Usados
-                        </span>
-                        <span style={{ fontSize: '0.8rem', background: '#10b981', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
-                            {stats.disponibles.toLocaleString()} Libres
-                        </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#e0f2fe', padding: '4px 12px', borderRadius: '8px', border: '1px solid #7dd3fc' }}>
+                            <span style={{ fontSize: '0.7rem', color: '#0369a1', fontWeight: 'bold', textTransform: 'uppercase' }}>Total</span>
+                            <span style={{ fontSize: '1.1rem', color: '#0369a1', fontWeight: '800' }}>{stats.total_base.toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fee2e2', padding: '4px 12px', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                            <span style={{ fontSize: '0.7rem', color: '#b91c1c', fontWeight: 'bold', textTransform: 'uppercase' }}>Usados</span>
+                            <span style={{ fontSize: '1.1rem', color: '#b91c1c', fontWeight: '800' }}>{stats.total_usados.toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#dcfce7', padding: '4px 12px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                            <span style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: 'bold', textTransform: 'uppercase' }}>Libres</span>
+                            <span style={{ fontSize: '1.1rem', color: '#15803d', fontWeight: '800' }}>{stats.disponibles.toLocaleString()}</span>
+                        </div>
                     </div>
                 </h1>
                 <p style={{ color: '#475569' }}>Seguimiento inteligente y exportación directa optimizada - Aguascalientes 19</p>
