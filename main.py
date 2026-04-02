@@ -108,29 +108,39 @@ def buscar(q: str = Query(None), sexo: str = None, edad: str = None):
         condiciones.append(f"({search_conds})")
         params.extend([f"%{q.strip()}%"] * len(columnas))
     
-    # Filtros específicos
-    if sexo and sexo.strip():
-        condiciones.append("\"sexo\" LIKE ?")
-        params.append(f"%{sexo.strip()}%")
-    if edad and edad.strip():
-        condiciones.append("CAST(\"edad\" AS TEXT) LIKE ?")
-        params.append(f"%{edad.strip()}%")
-
-    where_clause = " WHERE " + " AND ".join(condiciones) if condiciones else ""
-    sql = f"SELECT * FROM {TABLA_PRINCIPAL}{where_clause} LIMIT 100"
-    
-    print(f"DEBUG SQL: {sql} | Params: {params}")
-    
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
+        # Obtener columnas e ID (CURP)
+        cursor.execute(f"PRAGMA table_info('{TABLA_PRINCIPAL.replace('\"', '').replace(\"'\", '')}')")
+        columnas_db = [info[1] for info in cursor.fetchall()]
+        id_col = next((c for c in columnas_db if c.lower() == "curp"), columnas_db[0])
+
+        # Construir WHERE con prefijos para el JOIN
+        condiciones_con_prefijo = []
+        if q and q.strip():
+            search_conds = " OR ".join([f"t.\"{col}\" LIKE ?" for col in columnas_db])
+            condiciones_con_prefijo.append(f"({search_conds})")
+        if sexo and sexo.strip():
+            condiciones_con_prefijo.append("t.\"sexo\" LIKE ?")
+        if edad and edad.strip():
+            condiciones_con_prefijo.append("CAST(t.\"edad\" AS TEXT) LIKE ?")
+        
+        where_sql = " AND ".join(condiciones_con_prefijo) if condiciones_con_prefijo else "1=1"
+
+        # SQL que excluye ya exportados
+        sql = f"""
+            SELECT t.* 
+            FROM {TABLA_PRINCIPAL} t
+            LEFT JOIN historial_exportacion h ON t."{id_col}" = h.registro_id
+            WHERE h.registro_id IS NULL AND {where_sql}
+            LIMIT 100
+        """
+        
+        print(f"DEBUG SQL: {sql} | Params: {params}")
         cursor.execute(sql, params)
         filas = cursor.fetchall()
-        
-        # Obtener IDs ya exportados para marcar en la búsqueda
-        cursor.execute("SELECT registro_id FROM historial_exportacion")
-        historial = {row[0] for row in cursor.fetchall()}
         
         resultados = []
         for fila in filas:
@@ -139,10 +149,9 @@ def buscar(q: str = Query(None), sexo: str = None, edad: str = None):
             if "fecnac" in d and d["fecnac"]:
                 d["fecnac"] = str(d["fecnac"]).split(" ")[0]
             
-            # Marcar si ya fue exportado
-            val_id = str(d.get(columnas[0], "")) # Usamos la primera columna como ID por defecto para la marca visual
-            # Si hay una columna CURP, preferimos esa para la marca visual
-            id_para_marca = next((d[c] for c in d if c.lower() == "curp"), d.get(columnas[0]))
+            # Ahora todos son "nuevos" en esta vista
+            d["exportado"] = False
+            resultados.append(d)
             d["_exportado"] = str(id_para_marca) in historial
             
             resultados.append(d)
