@@ -145,21 +145,16 @@ def buscar(q: str = Query(None), sexo: str = None, edad: str = None):
         resultados = []
         for fila in filas:
             d = dict(fila)
-            # Limpiar formato de fecha si existe
             if "fecnac" in d and d["fecnac"]:
                 d["fecnac"] = str(d["fecnac"]).split(" ")[0]
             
-            # Ahora todos son "nuevos" en esta vista
             d["exportado"] = False
             resultados.append(d)
-            d["_exportado"] = str(id_para_marca) in historial
             
-            resultados.append(d)
-            
-        return {"total": len(resultados), "resultados": resultados, "columnas": columnas}
+        return {"total": len(resultados), "resultados": resultados, "columnas": columnas_db}
     except Exception as e:
         print(f"DEBUG ERROR: {e}")
-        return {"total": 0, "resultados": [], "columnas": columnas, "error": str(e)}
+        return {"total": 0, "resultados": [], "columnas": [], "error": str(e)}
     finally:
         conn.close()
 
