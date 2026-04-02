@@ -152,18 +152,18 @@ function App() {
             <header style={{ background: '#f0f9ff', padding: '1.5rem', borderRadius: '1rem', borderBottom: '2px solid #3b82f6', marginBottom: '1.5rem' }}>
                 <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#1e293b' }}>
                     Buscador Aguascalientes 19
-                    <div style={{ display: 'flex', gap: '10px', userSelect: 'none' }}>
-                        <div style={{ background: '#ffffff', border: '2px solid #3b82f6', padding: '6px 16px', borderRadius: '12px', textAlign: 'center', minWidth: '100px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                            <div style={{ fontSize: '0.65rem', color: '#3b82f6', fontWeight: 'bold', letterSpacing: '0.05em', marginBottom: '2px' }}>RECORDS TOTAL</div>
-                            <div style={{ fontSize: '1.2rem', color: '#000000', fontWeight: '900', lineHeight: '1' }}>{stats.total_base.toLocaleString()}</div>
+                    <div className="new-stats-container">
+                        <div className="stat-card total-card">
+                            <span className="stat-label">TOTAL</span>
+                            <span className="stat-value">{(stats.total_base || 0).toLocaleString()}</span>
                         </div>
-                        <div style={{ background: '#ffffff', border: '2px solid #ef4444', padding: '6px 16px', borderRadius: '12px', textAlign: 'center', minWidth: '100px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                            <div style={{ fontSize: '0.65rem', color: '#ef4444', fontWeight: 'bold', letterSpacing: '0.05em', marginBottom: '2px' }}>USADOS (BCS)</div>
-                            <div style={{ fontSize: '1.2rem', color: '#000000', fontWeight: '900', lineHeight: '1' }}>{stats.total_usados.toLocaleString()}</div>
+                        <div className="stat-card used-card">
+                            <span className="stat-label">USADOS</span>
+                            <span className="stat-value">{(stats.total_usados || 0).toLocaleString()}</span>
                         </div>
-                        <div style={{ background: '#ffffff', border: '2px solid #10b981', padding: '6px 16px', borderRadius: '12px', textAlign: 'center', minWidth: '100px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                            <div style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 'bold', letterSpacing: '0.05em', marginBottom: '2px' }}>LIBRES</div>
-                            <div style={{ fontSize: '1.2rem', color: '#000000', fontWeight: '900', lineHeight: '1' }}>{stats.disponibles.toLocaleString()}</div>
+                        <div className="stat-card free-card">
+                            <span className="stat-label">LIBRES</span>
+                            <span className="stat-value">{(stats.disponibles || 0).toLocaleString()}</span>
                         </div>
                     </div>
                 </h1>
@@ -364,6 +364,47 @@ function App() {
           padding: 1px 6px;
           border-radius: 4px;
           border: 1px solid #10b981;
+        }
+
+        /* Estilos para los nuevos contadores */
+        .new-stats-container {
+            display: flex;
+            gap: 12px;
+            user-select: none;
+        }
+        .stat-card {
+            background: #ffffff !important;
+            padding: 8px 16px;
+            border-radius: 12px;
+            text-align: center;
+            min-width: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 2px solid #d1d5db;
+        }
+        .total-card { border-color: #3b82f6 !important; }
+        .used-card { border-color: #ef4444 !important; }
+        .free-card { border-color: #10b981 !important; }
+
+        .stat-label {
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+            display: block;
+        }
+        .total-card .stat-label { color: #3b82f6 !important; }
+        .used-card .stat-label { color: #ef4444 !important; }
+        .free-card .stat-label { color: #10b981 !important; }
+
+        .stat-value {
+            font-size: 1.3rem;
+            color: #000000 !important;
+            font-weight: 900;
+            display: block;
+            line-height: 1;
         }
       `}</style>
         </div>
