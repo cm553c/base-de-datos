@@ -152,18 +152,18 @@ function App() {
             <header style={{ background: '#f0f9ff', padding: '1.5rem', borderRadius: '1rem', borderBottom: '2px solid #3b82f6', marginBottom: '1.5rem' }}>
                 <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#1e293b' }}>
                     Buscador Aguascalientes 19
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#e0f2fe', padding: '4px 12px', borderRadius: '8px', border: '1px solid #0369a1' }}>
-                            <span style={{ fontSize: '0.7rem', color: '#0369a1', fontWeight: 'bold', textTransform: 'uppercase' }}>Total</span>
-                            <span style={{ fontSize: '1.1rem', color: '#000000', fontWeight: '800' }}>{stats.total_base.toLocaleString()}</span>
+                    <div style={{ display: 'flex', gap: '10px', userSelect: 'none' }}>
+                        <div style={{ background: '#ffffff', border: '2px solid #3b82f6', padding: '6px 16px', borderRadius: '12px', textAlign: 'center', minWidth: '100px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                            <div style={{ fontSize: '0.65rem', color: '#3b82f6', fontWeight: 'bold', letterSpacing: '0.05em', marginBottom: '2px' }}>RECORDS TOTAL</div>
+                            <div style={{ fontSize: '1.2rem', color: '#000000', fontWeight: '900', lineHeight: '1' }}>{stats.total_base.toLocaleString()}</div>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fee2e2', padding: '4px 12px', borderRadius: '8px', border: '1px solid #b91c1c' }}>
-                            <span style={{ fontSize: '0.7rem', color: '#b91c1c', fontWeight: 'bold', textTransform: 'uppercase' }}>Usados</span>
-                            <span style={{ fontSize: '1.1rem', color: '#000000', fontWeight: '800' }}>{stats.total_usados.toLocaleString()}</span>
+                        <div style={{ background: '#ffffff', border: '2px solid #ef4444', padding: '6px 16px', borderRadius: '12px', textAlign: 'center', minWidth: '100px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                            <div style={{ fontSize: '0.65rem', color: '#ef4444', fontWeight: 'bold', letterSpacing: '0.05em', marginBottom: '2px' }}>USADOS (BCS)</div>
+                            <div style={{ fontSize: '1.2rem', color: '#000000', fontWeight: '900', lineHeight: '1' }}>{stats.total_usados.toLocaleString()}</div>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#dcfce7', padding: '4px 12px', borderRadius: '8px', border: '1px solid #15803d' }}>
-                            <span style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: 'bold', textTransform: 'uppercase' }}>Libres</span>
-                            <span style={{ fontSize: '1.1rem', color: '#000000', fontWeight: '800' }}>{stats.disponibles.toLocaleString()}</span>
+                        <div style={{ background: '#ffffff', border: '2px solid #10b981', padding: '6px 16px', borderRadius: '12px', textAlign: 'center', minWidth: '100px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                            <div style={{ fontSize: '0.65rem', color: '#10b981', fontWeight: 'bold', letterSpacing: '0.05em', marginBottom: '2px' }}>LIBRES</div>
+                            <div style={{ fontSize: '1.2rem', color: '#000000', fontWeight: '900', lineHeight: '1' }}>{stats.disponibles.toLocaleString()}</div>
                         </div>
                     </div>
                 </h1>
