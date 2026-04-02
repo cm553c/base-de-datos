@@ -56,9 +56,15 @@ def obtener_estadisticas():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
+        # Sanitizar nombre de tabla para PRAGMA
+        tabla_clean = TABLA_PRINCIPAL.replace('"', '').replace("'", "")
+        
         # Obtener la columna ID (CURP)
-        cursor.execute(f"PRAGMA table_info({TABLA_PRINCIPAL})")
+        cursor.execute(f"PRAGMA table_info('{tabla_clean}')")
         columnas = [info[1] for info in cursor.fetchall()]
+        if not columnas:
+             return {"error": f"La tabla {TABLA_PRINCIPAL} no existe en la base de datos."}
+             
         id_col = next((c for c in columnas if c.lower() == "curp"), columnas[0])
 
         # Total de CURPs en la base principal
