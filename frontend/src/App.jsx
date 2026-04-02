@@ -153,17 +153,17 @@ function App() {
                 <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#1e293b' }}>
                     Buscador Aguascalientes 19
                     <div style={{ display: 'flex', gap: '8px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#e0f2fe', padding: '4px 12px', borderRadius: '8px', border: '1px solid #7dd3fc' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#e0f2fe', padding: '4px 12px', borderRadius: '8px', border: '1px solid #0369a1' }}>
                             <span style={{ fontSize: '0.7rem', color: '#0369a1', fontWeight: 'bold', textTransform: 'uppercase' }}>Total</span>
-                            <span style={{ fontSize: '1.1rem', color: '#0369a1', fontWeight: '800' }}>{stats.total_base.toLocaleString()}</span>
+                            <span style={{ fontSize: '1.1rem', color: '#000000', fontWeight: '800' }}>{stats.total_base.toLocaleString()}</span>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fee2e2', padding: '4px 12px', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#fee2e2', padding: '4px 12px', borderRadius: '8px', border: '1px solid #b91c1c' }}>
                             <span style={{ fontSize: '0.7rem', color: '#b91c1c', fontWeight: 'bold', textTransform: 'uppercase' }}>Usados</span>
-                            <span style={{ fontSize: '1.1rem', color: '#b91c1c', fontWeight: '800' }}>{stats.total_usados.toLocaleString()}</span>
+                            <span style={{ fontSize: '1.1rem', color: '#000000', fontWeight: '800' }}>{stats.total_usados.toLocaleString()}</span>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#dcfce7', padding: '4px 12px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#dcfce7', padding: '4px 12px', borderRadius: '8px', border: '1px solid #15803d' }}>
                             <span style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: 'bold', textTransform: 'uppercase' }}>Libres</span>
-                            <span style={{ fontSize: '1.1rem', color: '#15803d', fontWeight: '800' }}>{stats.disponibles.toLocaleString()}</span>
+                            <span style={{ fontSize: '1.1rem', color: '#000000', fontWeight: '800' }}>{stats.disponibles.toLocaleString()}</span>
                         </div>
                     </div>
                 </h1>
