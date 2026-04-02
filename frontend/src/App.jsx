@@ -151,9 +151,6 @@ function App() {
         <div className="container">
             <header style={{ background: '#f0f9ff', padding: '1.5rem', borderRadius: '1rem', borderBottom: '2px solid #3b82f6', marginBottom: '1.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                    <footer style={{ marginTop: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
-                        <p>&copy; 2026 Buscador Aguascalientes 19 | API: {API_URL} | DB: {stats.db_size_mb || '?'} MB</p>
-                    </footer>
                     <h1 style={{ color: '#1e293b', margin: 0 }}>Buscador Aguascalientes 19</h1>
                     <div className="new-stats-container">
                         <div className="stat-card total-card">
