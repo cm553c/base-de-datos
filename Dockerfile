@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
 COPY main.py .
-COPY datos_búsqueda.sqlite .
+COPY datos_busqueda.sqlite .
 
 # Expose port
 EXPOSE 8000

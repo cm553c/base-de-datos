@@ -12,6 +12,7 @@ function App() {
     const [exportando, setExportando] = useState(false);
     const [error, setError] = useState(null);
     const [total, setTotal] = useState(0);
+    const [stats, setStats] = useState({ total_base: 0, total_usados: 0, disponibles: 0 });
 
     // Usar variable de entorno si existe, de lo contrario fallback a localhost
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -40,10 +41,25 @@ function App() {
         }
     }, [query, filtros]);
 
+    const obtenerEstadisticas = useCallback(async () => {
+        try {
+            const response = await axios.get(`${API_URL}/estadisticas`);
+            if (response.data && !response.data.error) {
+                setStats(response.data);
+            }
+        } catch (err) {
+            console.error("Error al obtener estadísticas:", err);
+        }
+    }, [API_URL]);
+
     useEffect(() => {
         const timeoutId = setTimeout(() => buscar(), 400);
         return () => clearTimeout(timeoutId);
     }, [query, buscar]);
+
+    useEffect(() => {
+        obtenerEstadisticas();
+    }, [obtenerEstadisticas]);
 
     const handleExportar = async (soloCurp = false) => {
         setExportando(true);
@@ -94,6 +110,8 @@ function App() {
             window.URL.revokeObjectURL(url);
 
             alert(`✅ Descargado como: ${nombreArchivo}`);
+            // Actualizar estadísticas después de exportar
+            obtenerEstadisticas();
         } catch (err) {
             // Manejar errores que vienen como arraybuffer
             if (err.response?.data instanceof ArrayBuffer) {
@@ -123,6 +141,7 @@ function App() {
         try {
             const response = await axios.post(`${API_URL}/limpiar-historial`);
             alert(response.data.mensaje);
+            obtenerEstadisticas(); // Actualizar contadores
         } catch (err) {
             alert('Error al conectar con el servidor.');
         }
@@ -132,12 +151,20 @@ function App() {
         <div className="container">
             <header style={{ background: '#f0f9ff', padding: '1.5rem', borderRadius: '1rem', borderBottom: '2px solid #3b82f6', marginBottom: '1.5rem' }}>
                 <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    Buscador BCS 19
-                    <span style={{ fontSize: '0.8rem', background: '#3b82f6', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
-                        v2.5 (VALIDACIÓN COMPLETA)
-                    </span>
+                    Buscador Aguascalientes 19
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        <span style={{ fontSize: '0.8rem', background: '#3b82f6', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
+                            {stats.total_base.toLocaleString()} Total
+                        </span>
+                        <span style={{ fontSize: '0.8rem', background: '#ef4444', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
+                            {stats.total_usados.toLocaleString()} Usados
+                        </span>
+                        <span style={{ fontSize: '0.8rem', background: '#10b981', color: 'white', padding: '2px 10px', borderRadius: '12px' }}>
+                            {stats.disponibles.toLocaleString()} Libres
+                        </span>
+                    </div>
                 </h1>
-                <p style={{ color: '#475569' }}>Seguimiento inteligente y exportación directa optimizada</p>
+                <p style={{ color: '#475569' }}>Seguimiento inteligente y exportación directa optimizada - Aguascalientes 19</p>
             </header>
 
             <section className="busqueda-container">

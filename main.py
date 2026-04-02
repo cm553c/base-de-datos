@@ -8,7 +8,7 @@ import pandas as pd
 from typing import List, Dict, Optional
 from datetime import datetime
 
-app = FastAPI(title="API de Búsqueda BCS v2", description="Servidor avanzado con filtros y exportación")
+app = FastAPI(title="API de Búsqueda Aguascalientes v2", description="Servidor avanzado con filtros y exportación")
 
 # Configuración de CORS
 app.add_middleware(
@@ -21,8 +21,8 @@ app.add_middleware(
 
 # Configuración de base de datos dinámica
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.getenv("DATABASE_URL", os.path.join(BASE_DIR, "datos_búsqueda.sqlite"))
-TABLA_PRINCIPAL = '"Baja  California  Sur 19"'
+DB_PATH = os.getenv("DATABASE_URL", os.path.join(BASE_DIR, "datos_busqueda.sqlite"))
+TABLA_PRINCIPAL = '"Aguscalientes 19"'
 
 def inicializar_db():
     conn = sqlite3.connect(DB_PATH)
@@ -49,7 +49,31 @@ def obtener_columnas():
 
 @app.get("/")
 def inicio():
-    return {"mensaje": "API de Búsqueda y Exportación BCS Activa"}
+    return {"mensaje": "API de Búsqueda y Exportación Aguascalientes Activa"}
+
+@app.get("/estadisticas")
+def obtener_estadisticas():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        # Total de CURPs en la base principal
+        cursor.execute(f"SELECT COUNT(*) FROM {TABLA_PRINCIPAL}")
+        total_base = cursor.fetchone()[0]
+        
+        # Total de CURPs en el historial (usados)
+        cursor.execute("SELECT COUNT(*) FROM historial_exportacion")
+        total_usados = cursor.fetchone()[0]
+        
+        return {
+            "total_base": total_base,
+            "total_usados": total_usados,
+            "disponibles": total_base - total_usados
+        }
+    except Exception as e:
+        print(f"Error en estadísticas: {e}")
+        return {"error": str(e)}
+    finally:
+        conn.close()
 
 @app.get("/columnas")
 def listar_columnas():

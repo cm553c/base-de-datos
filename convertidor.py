@@ -4,8 +4,8 @@ import pyodbc
 import os
 
 # Configuración de archivos
-archivo_access = r"d:\proyecto acces\BAJA CALIFORNIA SUR 19.accdb"
-archivo_sqlite = r"d:\proyecto acces\datos_búsqueda.sqlite"
+archivo_access = r"d:\proyecto acces\AGUSCALIENTES 19.accdb"
+archivo_sqlite = r"d:\proyecto acces\datos_busqueda.sqlite"
 
 def explorar_y_convertir():
     print(f"--- Iniciando proceso para: {archivo_access} ---")

@@ -17,7 +17,7 @@ dist-ssr/
 
 # SQLite
 # Descomentar la siguiente línea si prefieres NO subir la base de datos (y usar una externa)
-# datos_búsqueda.sqlite
+# datos_busqueda.sqlite
 
 # System
 .DS_Store
