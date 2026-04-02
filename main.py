@@ -80,10 +80,14 @@ def obtener_estadisticas():
         cursor.execute(sql_usados)
         total_usados = cursor.fetchone()[0]
         
+        # Tamaño del archivo para diagnóstico
+        db_size_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
+        
         return {
             "total_base": total_base,
             "total_usados": total_usados,
-            "disponibles": total_base - total_usados
+            "disponibles": total_base - total_usados,
+            "db_size_mb": round(db_size_mb, 2)
         }
     except Exception as e:
         print(f"Error en estadísticas: {e}")
