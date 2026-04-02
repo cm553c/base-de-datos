@@ -158,7 +158,7 @@ function App() {
                             <div className="stat-value">{(stats.total_base || 0).toLocaleString()}</div>
                         </div>
                         <div className="stat-card used-card">
-                            <div className="stat-label">USADOS (BCS)</div>
+                            <div className="stat-label">USADOS</div>
                             <div className="stat-value">{(stats.total_usados || 0).toLocaleString()}</div>
                         </div>
                         <div className="stat-card free-card">
