@@ -150,24 +150,24 @@ function App() {
     return (
         <div className="container">
             <header style={{ background: '#f0f9ff', padding: '1.5rem', borderRadius: '1rem', borderBottom: '2px solid #3b82f6', marginBottom: '1.5rem' }}>
-                <h1 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#1e293b' }}>
-                    Buscador Aguascalientes 19
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <h1 style={{ color: '#1e293b', margin: 0 }}>Buscador Aguascalientes 19</h1>
                     <div className="new-stats-container">
                         <div className="stat-card total-card">
-                            <span className="stat-label">TOTAL</span>
-                            <span className="stat-value">{(stats.total_base || 0).toLocaleString()}</span>
+                            <div className="stat-label">TOTAL BASE</div>
+                            <div className="stat-value">{(stats.total_base || 0).toLocaleString()}</div>
                         </div>
                         <div className="stat-card used-card">
-                            <span className="stat-label">USADOS</span>
-                            <span className="stat-value">{(stats.total_usados || 0).toLocaleString()}</span>
+                            <div className="stat-label">USADOS (BCS)</div>
+                            <div className="stat-value">{(stats.total_usados || 0).toLocaleString()}</div>
                         </div>
                         <div className="stat-card free-card">
-                            <span className="stat-label">LIBRES</span>
-                            <span className="stat-value">{(stats.disponibles || 0).toLocaleString()}</span>
+                            <div className="stat-label">LIBRES</div>
+                            <div className="stat-value">{(stats.disponibles || 0).toLocaleString()}</div>
                         </div>
                     </div>
-                </h1>
-                <p style={{ color: '#475569' }}>Seguimiento inteligente y exportación directa optimizada - Aguascalientes 19</p>
+                </div>
+                <p style={{ color: '#475569', margin: 0 }}>Seguimiento inteligente y exportación directa optimizada - Aguascalientes 19</p>
             </header>
 
             <section className="busqueda-container">
