@@ -7,6 +7,8 @@ import sqlite3
 import pandas as pd
 from typing import List, Dict, Optional
 from datetime import datetime
+import io
+from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="API de Búsqueda Aguascalientes v2", description="Servidor avanzado con filtros y exportación")
 
@@ -274,17 +276,22 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
         nombre_archivo = f"{prefijo}_{fecha_str}.xlsx"
         
-        # Guardar en archivo temporal
-        import tempfile
-        temp_dir = tempfile.gettempdir()
-        ruta_excel = os.path.join(temp_dir, nombre_archivo)
-        df.to_excel(ruta_excel, index=False)
+        # Generar Excel en memoria (BytesIO) para evitar problemas de disco en Render
+        import io
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False)
+        output.seek(0)
         
-        # Retornar el archivo
-        return FileResponse(
-            ruta_excel, 
-            filename=nombre_archivo,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        # Nombre del archivo para el header
+        headers = {
+            'Content-Disposition': f'attachment; filename="{nombre_archivo}"'
+        }
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers
         )
     except HTTPException as he:
         raise he
