@@ -261,6 +261,10 @@ function App() {
                 )}
             </div>
 
+            <footer style={{ marginTop: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem', paddingBottom: '2rem' }}>
+                <p>&copy; 2026 Buscador Aguascalientes 19 | Protección de Unicidad Activa</p>
+            </footer>
+
             <style>{`
         .botones-exportar {
           display: flex;
