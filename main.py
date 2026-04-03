@@ -117,7 +117,8 @@ def buscar(q: str = Query(None), sexo: str = None, edad: str = None):
     cursor = conn.cursor()
     try:
         # Obtener columnas e ID (CURP)
-        cursor.execute(f"PRAGMA table_info('{TABLA_PRINCIPAL.replace('\"', '').replace(\"'\", '')}')")
+        tabla_sanitizada = TABLA_PRINCIPAL.replace('"', '').replace("'", "")
+        cursor.execute(f"PRAGMA table_info('{tabla_sanitizada}')")
         columnas_db = [info[1] for info in cursor.fetchall()]
         id_col = next((c for c in columnas_db if c.lower() == "curp"), columnas_db[0])
 
