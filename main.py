@@ -277,7 +277,6 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         nombre_archivo = f"{prefijo}_{fecha_str}.xlsx"
         
         # Generar Excel en memoria (BytesIO) para evitar problemas de disco en Render
-        import io
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
