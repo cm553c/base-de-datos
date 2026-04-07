@@ -13,6 +13,9 @@ function App() {
     const [error, setError] = useState(null);
     const [total, setTotal] = useState(0);
     const [stats, setStats] = useState({ total_base: 0, total_usados: 0, disponibles: 0 });
+    const [mostrarAdmin, setMostrarAdmin] = useState(false);
+    const [historial, setHistorial] = useState(null);
+    const [importando, setImportando] = useState(false);
 
     // Usar variable de entorno si existe, de lo contrario fallback a localhost
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -52,6 +55,17 @@ function App() {
         }
     }, [API_URL]);
 
+    const obtenerHistorial = useCallback(async () => {
+        try {
+            const response = await axios.get(`${API_URL}/historial-resumen`);
+            if (response.data && !response.data.error) {
+                setHistorial(response.data);
+            }
+        } catch (err) {
+            console.error("Error al obtener historial:", err);
+        }
+    }, [API_URL]);
+
     useEffect(() => {
         const timeoutId = setTimeout(() => buscar(), 400);
         return () => clearTimeout(timeoutId);
@@ -59,7 +73,8 @@ function App() {
 
     useEffect(() => {
         obtenerEstadisticas();
-    }, [obtenerEstadisticas]);
+        obtenerHistorial();
+    }, [obtenerEstadisticas, obtenerHistorial]);
 
     const handleExportar = async (soloCurp = false) => {
         setExportando(true);
@@ -110,8 +125,9 @@ function App() {
             window.URL.revokeObjectURL(url);
 
             alert(`✅ Descargado como: ${nombreArchivo}`);
-            // Actualizar estadísticas después de exportar
+            // Actualizar estadísticas y historial después de exportar
             obtenerEstadisticas();
+            obtenerHistorial();
         } catch (err) {
             // Manejar errores que vienen como arraybuffer
             if (err.response?.data instanceof ArrayBuffer) {
@@ -144,6 +160,25 @@ function App() {
             obtenerEstadisticas(); // Actualizar contadores
         } catch (err) {
             alert('Error al conectar con el servidor.');
+        }
+    };
+
+    const handleImportarExcel = async () => {
+        if (!confirm('\u00bfImportar CURPs desde todos los archivos Excel del directorio al historial? Esto evitar\u00e1 que se vuelvan a descargar.')) return;
+        setImportando(true);
+        try {
+            const response = await axios.post(`${API_URL}/importar-curps-excel`);
+            const data = response.data;
+            let detalle = data.archivos?.map(a =>
+                a.error ? `  \u274c ${a.archivo}: ${a.error}` : `  \u2705 ${a.archivo}: ${a.curps_encontrados} encontrados, ${a.nuevos_importados} nuevos`
+            ).join('\n') || '';
+            alert(`${data.mensaje}\n\nDetalle:\n${detalle}`);
+            obtenerEstadisticas();
+            obtenerHistorial();
+        } catch (err) {
+            alert(`Error al importar: ${err.response?.data?.detail || err.message}`);
+        } finally {
+            setImportando(false);
         }
     };
 
@@ -260,6 +295,67 @@ function App() {
                     <div className="no-results">No se encontraron registros</div>
                 )}
             </div>
+
+            {/* Panel de Administración de CURPs */}
+            <section style={{ marginTop: '1.5rem' }}>
+                <button
+                    className="btn-admin-toggle"
+                    onClick={() => { setMostrarAdmin(!mostrarAdmin); if (!mostrarAdmin && !historial) obtenerHistorial(); }}
+                >
+                    {mostrarAdmin ? '▲ Ocultar Administración de CURPs' : '▼ Administración de CURPs'}
+                </button>
+
+                {mostrarAdmin && (
+                    <div className="admin-panel">
+                        <div className="admin-header">
+                            <h3>📊 Historial de Exportaciones</h3>
+                            <button
+                                className="btn-importar"
+                                onClick={handleImportarExcel}
+                                disabled={importando}
+                            >
+                                {importando ? 'Importando...' : '📥 Importar CURPs desde Excel'}
+                            </button>
+                        </div>
+
+                        {historial && (
+                            <>
+                                <div className="admin-stat">
+                                    <strong>Total CURPs en historial:</strong> {historial.total_historial?.toLocaleString()}
+                                </div>
+
+                                {historial.exportaciones_por_fecha?.length > 0 && (
+                                    <div className="admin-section">
+                                        <h4>Exportaciones por fecha</h4>
+                                        <table className="admin-table">
+                                            <thead><tr><th>Fecha</th><th>Cantidad</th></tr></thead>
+                                            <tbody>
+                                                {historial.exportaciones_por_fecha.map((e, i) => (
+                                                    <tr key={i}><td>{e.fecha}</td><td>{e.cantidad}</td></tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+
+                                {historial.recientes?.length > 0 && (
+                                    <div className="admin-section">
+                                        <h4>Últimos CURPs exportados</h4>
+                                        <table className="admin-table">
+                                            <thead><tr><th>CURP</th><th>Fecha</th></tr></thead>
+                                            <tbody>
+                                                {historial.recientes.map((r, i) => (
+                                                    <tr key={i}><td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{r.curp}</td><td>{r.fecha?.split('.')[0]}</td></tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                )}
+            </section>
 
             <footer style={{ marginTop: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem', paddingBottom: '2rem' }}>
                 <p>&copy; 2026 Buscador Aguascalientes 19 | Protección de Unicidad Activa</p>
@@ -409,6 +505,95 @@ function App() {
             font-weight: 900;
             display: block;
             line-height: 1;
+        }
+
+        /* Panel de administraci\u00f3n */
+        .btn-admin-toggle {
+            width: 100%;
+            padding: 0.75rem;
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+            letter-spacing: 0.02em;
+        }
+        .btn-admin-toggle:hover {
+            background: #334155;
+        }
+        .admin-panel {
+            margin-top: 0.75rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+        }
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .admin-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            color: #1e293b;
+        }
+        .btn-importar {
+            padding: 0.6rem 1.2rem;
+            background: #7c3aed;
+            color: white;
+            border: none;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+        }
+        .btn-importar:hover {
+            background: #6d28d9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+        }
+        .btn-importar:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .admin-stat {
+            padding: 0.5rem 0;
+            font-size: 0.95rem;
+            color: #334155;
+        }
+        .admin-section {
+            margin-top: 1rem;
+        }
+        .admin-section h4 {
+            margin: 0 0 0.5rem;
+            color: #475569;
+            font-size: 0.9rem;
+        }
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .admin-table th {
+            background: #e2e8f0;
+            padding: 0.4rem 0.75rem;
+            text-align: left;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .admin-table td {
+            padding: 0.35rem 0.75rem;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .admin-table tr:hover td {
+            background: #f1f5f9;
         }
       `}</style>
         </div>
