@@ -164,19 +164,15 @@ function App() {
     };
 
     const handleImportarExcel = async () => {
-        if (!confirm('\u00bfImportar CURPs desde todos los archivos Excel del directorio al historial? Esto evitar\u00e1 que se vuelvan a descargar.')) return;
+        if (!confirm('¿Sincronizar historial con todos los archivos Excel? Esto registrará permanentemente cualquier CURP ya exportado.')) return;
         setImportando(true);
         try {
             const response = await axios.post(`${API_URL}/importar-curps-excel`);
-            const data = response.data;
-            let detalle = data.archivos?.map(a =>
-                a.error ? `  \u274c ${a.archivo}: ${a.error}` : `  \u2705 ${a.archivo}: ${a.curps_encontrados} encontrados, ${a.nuevos_importados} nuevos`
-            ).join('\n') || '';
-            alert(`${data.mensaje}\n\nDetalle:\n${detalle}`);
+            alert(response.data.mensaje);
             obtenerEstadisticas();
             obtenerHistorial();
         } catch (err) {
-            alert(`Error al importar: ${err.response?.data?.detail || err.message}`);
+            alert(`Error al sincronizar: ${err.response?.data?.detail || err.message}`);
         } finally {
             setImportando(false);
         }

@@ -26,45 +26,100 @@ app.add_middleware(
 # Configuración de base de datos dinámica
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.getenv("DATABASE_URL", os.path.join(BASE_DIR, "datos_busqueda.sqlite"))
+HISTORIAL_DB_PATH = os.getenv("HISTORIAL_DATABASE_URL", os.path.join(BASE_DIR, "historial_perpetuo.sqlite"))
 TABLA_PRINCIPAL = '"Aguscalientes 19"'
 
 def inicializar_db():
-    conn = sqlite3.connect(DB_PATH)
-    # Habilitar modo WAL para concurrencia y velocidad
-    conn.execute("PRAGMA journal_mode=WAL")
-    cursor = conn.cursor()
-    # Crear tabla de historial si no existe
+    # 1. Inicializar DB de búsqueda
+    conn_busqueda = sqlite3.connect(DB_PATH)
+    conn_busqueda.execute("PRAGMA journal_mode=WAL")
+    conn_busqueda.close()
+
+    # 2. Inicializar DB de historial perpetuo
+    conn_historial = sqlite3.connect(HISTORIAL_DB_PATH)
+    conn_historial.execute("PRAGMA journal_mode=WAL")
+    cursor = conn_historial.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS historial_exportacion (
             registro_id TEXT PRIMARY KEY,
             fecha_exportacion DATETIME
         )
     """)
-    conn.commit()
+    conn_historial.commit()
+    conn_historial.close()
     
-    # Limpiar entradas huérfanas del historial (de migraciones anteriores)
+    print(f"[INIT] Bases de datos inicializadas. Historial en: {os.path.basename(HISTORIAL_DB_PATH)}")
+    
+    # 3. Sincronizar automáticamente con archivos Excel al arrancar
     try:
-        tabla_clean = TABLA_PRINCIPAL.replace('"', '').replace("'", "")
-        cursor.execute(f"PRAGMA table_info('{tabla_clean}')")
-        columnas = [info[1] for info in cursor.fetchall()]
-        if columnas:
-            id_col = next((c for c in columnas if c.lower() == "curp"), columnas[0])
-            # Eliminar del historial los que NO existen en la tabla actual
-            cursor.execute(f'''
-                DELETE FROM historial_exportacion
-                WHERE registro_id NOT IN (
-                    SELECT "{id_col}" FROM {TABLA_PRINCIPAL}
-                    WHERE "{id_col}" IS NOT NULL AND "{id_col}" != ''
-                )
-            ''')
-            eliminados = cursor.rowcount
-            if eliminados > 0:
-                print(f"[INIT] Limpieza: {eliminados} entradas huérfanas eliminadas del historial")
-            conn.commit()
+        sincronizar_historial_excel()
     except Exception as e:
-        print(f"[INIT] Error limpiando historial huérfano: {e}")
+        print(f"[INIT] Error en sincronización inicial: {e}")
+
+def sincronizar_historial_excel():
+    """Escanea archivos Excel y registra CURPs en el historial perpetuo."""
+    conn_hist = sqlite3.connect(HISTORIAL_DB_PATH)
+    cursor_hist = conn_hist.cursor()
     
-    conn.close()
+    # Necesitamos una conexión temporal a la DB principal para validar CURPs
+    conn_main = sqlite3.connect(DB_PATH)
+    cursor_main = conn_main.cursor()
+    
+    try:
+        # Obtener columna CURP de la DB principal
+        tabla_clean = TABLA_PRINCIPAL.replace('"', '').replace("'", "")
+        cursor_main.execute(f"PRAGMA table_info('{tabla_clean}')")
+        cols = [info[1] for info in cursor_main.fetchall()]
+        id_col = next((c for c in cols if c.lower() == "curp"), cols[0])
+        
+        xlsx_files = glob.glob(os.path.join(BASE_DIR, "*.xlsx"))
+        total_nuevos = 0
+        
+        for filepath in xlsx_files:
+            try:
+                wb = openpyxl.load_workbook(filepath, read_only=True)
+                ws = wb.active
+                rows = list(ws.iter_rows(values_only=True))
+                if not rows:
+                    wb.close()
+                    continue
+                
+                header = rows[0]
+                curp_col = None
+                for i, h in enumerate(header or []):
+                    if h and str(h).lower() == "curp":
+                        curp_col = i
+                        break
+                if curp_col is None and header and len(header) == 1:
+                    curp_col = 0
+                
+                if curp_col is not None:
+                    ahora = datetime.now()
+                    for row in rows[1:]:
+                        if row[curp_col]:
+                            curp_val = str(row[curp_col]).strip()
+                            if curp_val:
+                                # Solo insertar si no existe en historial
+                                cursor_hist.execute("SELECT 1 FROM historial_exportacion WHERE registro_id = ?", (curp_val,))
+                                if not cursor_hist.fetchone():
+                                    # Opcional: validar que existe en la DB principal (comentado para máxima perpetuidad)
+                                    # cursor_main.execute(f'SELECT 1 FROM {TABLA_PRINCIPAL} WHERE "{id_col}" = ?', (curp_val,))
+                                    # if cursor_main.fetchone():
+                                    cursor_hist.execute(
+                                        "INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)",
+                                        (curp_val, ahora)
+                                    )
+                                    total_nuevos += cursor_hist.rowcount
+                wb.close()
+            except Exception:
+                continue
+        
+        conn_hist.commit()
+        if total_nuevos > 0:
+            print(f"[SYNC] Se registraron {total_nuevos} nuevos CURPs desde archivos Excel.")
+    finally:
+        conn_hist.close()
+        conn_main.close()
 
 inicializar_db()
 
@@ -102,10 +157,13 @@ def obtener_estadisticas():
         total_base = cursor.fetchone()[0]
         
         # Total de PERSONAS que ya han sido exportadas
+        # Para esto necesitamos conectar ambas bases de datos
+        cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
+        
         sql_usados = f"""
             SELECT COUNT(*) 
             FROM {TABLA_PRINCIPAL} t
-            INNER JOIN historial_exportacion h ON t.\"{id_col}\" = h.registro_id
+            INNER JOIN hist.historial_exportacion h ON t.\"{id_col}\" = h.registro_id
         """
         cursor.execute(sql_usados)
         total_usados = cursor.fetchone()[0]
@@ -164,11 +222,12 @@ def buscar(q: str = Query(None), sexo: str = None, edad: str = None):
         
         where_sql = " AND ".join(condiciones_con_prefijo) if condiciones_con_prefijo else "1=1"
 
-        # SQL que excluye ya exportados
+        # SQL que excluye ya exportados usando ATTACH
+        cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
         sql = f"""
             SELECT t.* 
             FROM {TABLA_PRINCIPAL} t
-            LEFT JOIN historial_exportacion h ON t."{id_col}" = h.registro_id
+            LEFT JOIN hist.historial_exportacion h ON t."{id_col}" = h.registro_id
             WHERE h.registro_id IS NULL AND {where_sql}
             LIMIT 100
         """
@@ -250,12 +309,13 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         cursor = conn.cursor()
         # Asegurar modo WAL en esta conexión también
         cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
         cursor.execute("BEGIN TRANSACTION")
         
         # Primero identificamos los IDs que se van a exportar
         sql_ids = f"""
             SELECT t."{id_col}" FROM {TABLA_PRINCIPAL} t
-            LEFT JOIN historial_exportacion h ON t."{id_col}" = h.registro_id
+            LEFT JOIN hist.historial_exportacion h ON t."{id_col}" = h.registro_id
             WHERE h.registro_id IS NULL
             AND {where_sql}
             {filtro_vacios}
@@ -274,7 +334,7 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         # 2. Insertar inmediatamente en el historial para "bloquearlos"
         ahora = datetime.now()
         data_to_insert = [(str(val_id), ahora) for val_id in ids_a_exportar]
-        cursor.executemany("INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)", 
+        cursor.executemany("INSERT OR IGNORE INTO hist.historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)", 
                            data_to_insert)
         
         # 3. Commit de la reserva antes de generar el Excel
@@ -338,97 +398,18 @@ def limpiar_historial():
     raise HTTPException(status_code=403, detail="La limpieza de historial ha sido deshabilitada para garantizar la unicidad absoluta de los datos.")
 
 @app.post("/importar-curps-excel")
-def importar_curps_excel():
-    """Escanea archivos Excel en el directorio y registra sus CURPs en el historial."""
-    conn = sqlite3.connect(DB_PATH, timeout=20)
-    cursor = conn.cursor()
+def importar_curps_manual():
+    """Endpoint manual para forzar la sincronización con archivos Excel."""
     try:
-        # Obtener columna CURP
-        tabla_clean = TABLA_PRINCIPAL.replace('"', '').replace("'", "")
-        cursor.execute(f"PRAGMA table_info('{tabla_clean}')")
-        columnas = [info[1] for info in cursor.fetchall()]
-        id_col = next((c for c in columnas if c.lower() == "curp"), columnas[0])
-        
-        # Escanear archivos Excel en el directorio del proyecto
-        xlsx_files = glob.glob(os.path.join(BASE_DIR, "*.xlsx"))
-        total_importados = 0
-        total_ya_existentes = 0
-        archivos_procesados = []
-        
-        for filepath in xlsx_files:
-            try:
-                wb = openpyxl.load_workbook(filepath, read_only=True)
-                ws = wb.active
-                rows = list(ws.iter_rows(values_only=True))
-                if not rows:
-                    wb.close()
-                    continue
-                
-                header = rows[0]
-                curp_col = None
-                for i, h in enumerate(header):
-                    if h and str(h).lower() == "curp":
-                        curp_col = i
-                        break
-                if curp_col is None and len(header) == 1:
-                    curp_col = 0
-                
-                if curp_col is not None:
-                    curps_encontrados = []
-                    for row in rows[1:]:
-                        if row[curp_col]:
-                            curp_val = str(row[curp_col]).strip()
-                            if curp_val:
-                                curps_encontrados.append(curp_val)
-                    
-                    # Solo importar CURPs que existan en la tabla principal
-                    importados_archivo = 0
-                    ahora = datetime.now()
-                    for curp_val in curps_encontrados:
-                        # Verificar que el CURP existe en la tabla actual
-                        cursor.execute(f'SELECT COUNT(*) FROM {TABLA_PRINCIPAL} WHERE "{id_col}" = ?', (curp_val,))
-                        if cursor.fetchone()[0] > 0:
-                            cursor.execute(
-                                "INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)",
-                                (curp_val, ahora)
-                            )
-                            if cursor.rowcount > 0:
-                                importados_archivo += 1
-                            else:
-                                total_ya_existentes += 1
-                    
-                    total_importados += importados_archivo
-                    nombre = os.path.basename(filepath)
-                    archivos_procesados.append({
-                        "archivo": nombre,
-                        "curps_encontrados": len(curps_encontrados),
-                        "nuevos_importados": importados_archivo
-                    })
-                
-                wb.close()
-            except Exception as e:
-                archivos_procesados.append({
-                    "archivo": os.path.basename(filepath),
-                    "error": str(e)
-                })
-        
-        conn.commit()
-        return {
-            "mensaje": f"Importación completada: {total_importados} CURPs nuevos registrados, {total_ya_existentes} ya existían.",
-            "total_importados": total_importados,
-            "total_ya_existentes": total_ya_existentes,
-            "archivos": archivos_procesados
-        }
+        sincronizar_historial_excel()
+        return {"mensaje": "Sincronización manual completada correctamente."}
     except Exception as e:
-        print(f"[IMPORT ERROR]: {e}")
-        raise HTTPException(status_code=500, detail=f"Error al importar: {str(e)}")
-    finally:
-        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/historial-resumen")
 def historial_resumen():
     """Devuelve resumen del historial de exportaciones."""
-    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn = sqlite3.connect(HISTORIAL_DB_PATH, timeout=10)
     cursor = conn.cursor()
     try:
         # Total en historial
