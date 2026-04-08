@@ -414,10 +414,10 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
             bloqueados = gestor_h.obtener_ids_bloqueados()
             if bloqueados and len(bloqueados) < 999:
                 placeholders = ",".join(["?"] * len(bloqueados))
-                sql_ids = f"SELECT \"{id_col}\" FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" NOT IN ({placeholders}) AND {where_sql} {filtro_vacios} LIMIT ?"
+                sql_ids = f"SELECT t.\"{id_col}\" FROM {TABLA_PRINCIPAL} t WHERE t.\"{id_col}\" NOT IN ({placeholders}) AND {where_sql} {filtro_vacios} LIMIT ?"
                 cursor.execute(sql_ids, bloqueados + params)
             else:
-                sql_ids = f"SELECT \"{id_col}\" FROM {TABLA_PRINCIPAL} WHERE {where_sql} {filtro_vacios} LIMIT ?"
+                sql_ids = f"SELECT t.\"{id_col}\" FROM {TABLA_PRINCIPAL} t WHERE {where_sql} {filtro_vacios} LIMIT ?"
                 cursor.execute(sql_ids, params)
             ids_a_exportar = [row[0] for row in cursor.fetchall()]
 
