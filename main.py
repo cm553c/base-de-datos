@@ -11,6 +11,11 @@ import io
 import glob
 import openpyxl
 from fastapi.responses import StreamingResponse
+try:
+    import psycopg2
+    from psycopg2 import sql
+except ImportError:
+    psycopg2 = None
 
 app = FastAPI(title="API de Búsqueda Aguascalientes v2", description="Servidor avanzado con filtros y exportación")
 
@@ -29,26 +34,82 @@ DB_PATH = os.getenv("DATABASE_URL", os.path.join(BASE_DIR, "datos_busqueda.sqlit
 HISTORIAL_DB_PATH = os.getenv("HISTORIAL_DATABASE_URL", os.path.join(BASE_DIR, "historial_perpetuo.sqlite"))
 TABLA_PRINCIPAL = '"Aguscalientes 19"'
 
+class GestorHistorial:
+    def __init__(self, db_url):
+        self.db_url = db_url
+        self.is_postgres = db_url.startswith("postgres://") or db_url.startswith("postgresql://")
+        if self.is_postgres and not psycopg2:
+            print("[ALERTA] PostgreSQL configurado pero psycopg2 no está instalado. Usando SQLite por defecto.")
+            self.is_postgres = False
+
+    def get_connection(self):
+        if self.is_postgres:
+            # Reemplazar postgres:// por postgresql:// por compatibilidad con SQLAlchemy/Psycorp2
+            url = self.db_url.replace("postgres://", "postgresql://")
+            return psycopg2.connect(url)
+        else:
+            return sqlite3.connect(self.db_url)
+
+    def inicializar(self):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            if self.is_postgres:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS historial_exportacion (
+                        registro_id TEXT PRIMARY KEY,
+                        fecha_exportacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            else:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS historial_exportacion (
+                        registro_id TEXT PRIMARY KEY,
+                        fecha_exportacion DATETIME
+                    )
+                """)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def registrar_multiples(self, ids, fecha):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            if self.is_postgres:
+                # PostgreSQL use ON CONFLICT
+                query = "INSERT INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (%s, %s) ON CONFLICT (registro_id) DO NOTHING"
+                data = [(str(vid), fecha) for vid in ids]
+                cursor.executemany(query, data)
+            else:
+                query = "INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)"
+                data = [(str(vid), fecha) for vid in ids]
+                cursor.executemany(query, data)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def obtener_ids_bloqueados(self):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT registro_id FROM historial_exportacion")
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+gestor_h = GestorHistorial(HISTORIAL_DB_PATH)
+
 def inicializar_db():
     # 1. Inicializar DB de búsqueda
     conn_busqueda = sqlite3.connect(DB_PATH)
     conn_busqueda.execute("PRAGMA journal_mode=WAL")
     conn_busqueda.close()
 
-    # 2. Inicializar DB de historial perpetuo
-    conn_historial = sqlite3.connect(HISTORIAL_DB_PATH)
-    conn_historial.execute("PRAGMA journal_mode=WAL")
-    cursor = conn_historial.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS historial_exportacion (
-            registro_id TEXT PRIMARY KEY,
-            fecha_exportacion DATETIME
-        )
-    """)
-    conn_historial.commit()
-    conn_historial.close()
+    # 2. Inicializar DB de historial (SQLite o Postgres)
+    gestor_h.inicializar()
     
-    print(f"[INIT] Bases de datos inicializadas. Historial en: {os.path.basename(HISTORIAL_DB_PATH)}")
+    print(f"[INIT] Bases de datos inicializadas. Modo historial: {'PostgreSQL' if gestor_h.is_postgres else 'SQLite'}")
     
     # 3. Sincronizar automáticamente con archivos Excel al arrancar
     try:
@@ -58,68 +119,48 @@ def inicializar_db():
 
 def sincronizar_historial_excel():
     """Escanea archivos Excel y registra CURPs en el historial perpetuo."""
-    conn_hist = sqlite3.connect(HISTORIAL_DB_PATH)
-    cursor_hist = conn_hist.cursor()
+    # Necesitamos una conexión temporal a la DB principal para validar CURPs (opcional)
+    xlsx_files = glob.glob(os.path.join(BASE_DIR, "*.xlsx"))
+    total_nuevos = 0
+    ahora = datetime.now()
     
-    # Necesitamos una conexión temporal a la DB principal para validar CURPs
-    conn_main = sqlite3.connect(DB_PATH)
-    cursor_main = conn_main.cursor()
-    
-    try:
-        # Obtener columna CURP de la DB principal
-        tabla_clean = TABLA_PRINCIPAL.replace('"', '').replace("'", "")
-        cursor_main.execute(f"PRAGMA table_info('{tabla_clean}')")
-        cols = [info[1] for info in cursor_main.fetchall()]
-        id_col = next((c for c in cols if c.lower() == "curp"), cols[0])
-        
-        xlsx_files = glob.glob(os.path.join(BASE_DIR, "*.xlsx"))
-        total_nuevos = 0
-        
-        for filepath in xlsx_files:
-            try:
-                wb = openpyxl.load_workbook(filepath, read_only=True)
-                ws = wb.active
-                rows = list(ws.iter_rows(values_only=True))
-                if not rows:
-                    wb.close()
-                    continue
-                
-                header = rows[0]
-                curp_col = None
-                for i, h in enumerate(header or []):
-                    if h and str(h).lower() == "curp":
-                        curp_col = i
-                        break
-                if curp_col is None and header and len(header) == 1:
-                    curp_col = 0
-                
-                if curp_col is not None:
-                    ahora = datetime.now()
-                    for row in rows[1:]:
-                        if row[curp_col]:
-                            curp_val = str(row[curp_col]).strip()
-                            if curp_val:
-                                # Solo insertar si no existe en historial
-                                cursor_hist.execute("SELECT 1 FROM historial_exportacion WHERE registro_id = ?", (curp_val,))
-                                if not cursor_hist.fetchone():
-                                    # Opcional: validar que existe en la DB principal (comentado para máxima perpetuidad)
-                                    # cursor_main.execute(f'SELECT 1 FROM {TABLA_PRINCIPAL} WHERE "{id_col}" = ?', (curp_val,))
-                                    # if cursor_main.fetchone():
-                                    cursor_hist.execute(
-                                        "INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)",
-                                        (curp_val, ahora)
-                                    )
-                                    total_nuevos += cursor_hist.rowcount
+    for filepath in xlsx_files:
+        try:
+            wb = openpyxl.load_workbook(filepath, read_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows:
                 wb.close()
-            except Exception:
                 continue
-        
-        conn_hist.commit()
-        if total_nuevos > 0:
-            print(f"[SYNC] Se registraron {total_nuevos} nuevos CURPs desde archivos Excel.")
-    finally:
-        conn_hist.close()
-        conn_main.close()
+            
+            header = rows[0]
+            curp_col = None
+            for i, h in enumerate(header or []):
+                if h and str(h).lower() == "curp":
+                    curp_col = i
+                    break
+            if curp_col is None and header and len(header) == 1:
+                curp_col = 0
+            
+            if curp_col is not None:
+                curps_a_registrar = []
+                for row in rows[1:]:
+                    if row[curp_col]:
+                        curp_val = str(row[curp_col]).strip()
+                        if curp_val:
+                            curps_a_registrar.append(curp_val)
+                
+                if curps_a_registrar:
+                    # En lotes para eficiencia
+                    gestor_h.registrar_multiples(curps_a_registrar, ahora)
+                    total_nuevos += len(curps_a_registrar)
+            wb.close()
+        except Exception as e:
+            print(f"[SYNC] Error procesando {filepath}: {e}")
+            continue
+    
+    if total_nuevos > 0:
+        print(f"[SYNC] Se procesaron {total_nuevos} CURPs desde archivos Excel.")
 
 inicializar_db()
 
@@ -157,17 +198,23 @@ def obtener_estadisticas():
         total_base = cursor.fetchone()[0]
         
         # Total de PERSONAS que ya han sido exportadas
-        # Para esto necesitamos conectar ambas bases de datos
-        cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
-        
-        sql_usados = f"""
-            SELECT COUNT(*) 
-            FROM {TABLA_PRINCIPAL} t
-            INNER JOIN hist.historial_exportacion h ON t.\"{id_col}\" = h.registro_id
-        """
-        cursor.execute(sql_usados)
-        total_usados = cursor.fetchone()[0]
-        
+        if not gestor_h.is_postgres:
+            cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
+            sql_usados = f"SELECT COUNT(*) FROM {TABLA_PRINCIPAL} t INNER JOIN hist.historial_exportacion h ON t.\"{id_col}\" = h.registro_id"
+            cursor.execute(sql_usados)
+            total_usados = cursor.fetchone()[0]
+        else:
+            # En Postgres, traemos los IDs y filtramos (o contamos directamente si es factible)
+            bloqueados = gestor_h.obtener_ids_bloqueados()
+            c_bloqueados = len(bloqueados)
+            # Para mayor precisión con la tabla actual:
+            if c_bloqueados < 10000:
+                placeholders = ",".join(["?"] * c_bloqueados)
+                cursor.execute(f"SELECT COUNT(*) FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" IN ({placeholders})", bloqueados)
+                total_usados = cursor.fetchone()[0]
+            else:
+                total_usados = c_bloqueados # Aproximación si hay demasiados
+
         # Tamaño del archivo para diagnóstico
         db_size_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
         
@@ -222,18 +269,26 @@ def buscar(q: str = Query(None), sexo: str = None, edad: str = None):
         
         where_sql = " AND ".join(condiciones_con_prefijo) if condiciones_con_prefijo else "1=1"
 
-        # SQL que excluye ya exportados usando ATTACH
-        cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
-        sql = f"""
-            SELECT t.* 
-            FROM {TABLA_PRINCIPAL} t
-            LEFT JOIN hist.historial_exportacion h ON t."{id_col}" = h.registro_id
-            WHERE h.registro_id IS NULL AND {where_sql}
-            LIMIT 100
-        """
+        # SQL que excluye ya exportados
+        if not gestor_h.is_postgres:
+            cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
+            sql = f"""
+                SELECT t.* FROM {TABLA_PRINCIPAL} t
+                LEFT JOIN hist.historial_exportacion h ON t."{id_col}" = h.registro_id
+                WHERE h.registro_id IS NULL AND {where_sql}
+                LIMIT 100
+            """
+            cursor.execute(sql, params)
+        else:
+            bloqueados = gestor_h.obtener_ids_bloqueados()
+            if bloqueados:
+                placeholders = ",".join(["?"] * len(bloqueados))
+                sql = f"SELECT * FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" NOT IN ({placeholders}) AND {where_sql} LIMIT 100"
+                cursor.execute(sql, bloqueados + params)
+            else:
+                sql = f"SELECT * FROM {TABLA_PRINCIPAL} WHERE {where_sql} LIMIT 100"
+                cursor.execute(sql, params)
         
-        print(f"DEBUG SQL: {sql} | Params: {params}")
-        cursor.execute(sql, params)
         filas = cursor.fetchall()
         
         resultados = []
@@ -313,16 +368,28 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         cursor.execute("BEGIN TRANSACTION")
         
         # Primero identificamos los IDs que se van a exportar
-        sql_ids = f"""
-            SELECT t."{id_col}" FROM {TABLA_PRINCIPAL} t
-            LEFT JOIN hist.historial_exportacion h ON t."{id_col}" = h.registro_id
-            WHERE h.registro_id IS NULL
-            AND {where_sql}
-            {filtro_vacios}
-            LIMIT ?
-        """
-        cursor.execute(sql_ids, params)
-        ids_a_exportar = [row[0] for row in cursor.fetchall()]
+        if not gestor_h.is_postgres:
+            cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
+            sql_ids = f"""
+                SELECT t."{id_col}" FROM {TABLA_PRINCIPAL} t
+                LEFT JOIN hist.historial_exportacion h ON t."{id_col}" = h.registro_id
+                WHERE h.registro_id IS NULL
+                AND {where_sql}
+                {filtro_vacios}
+                LIMIT ?
+            """
+            cursor.execute(sql_ids, params)
+            ids_a_exportar = [row[0] for row in cursor.fetchall()]
+        else:
+            bloqueados = gestor_h.obtener_ids_bloqueados()
+            if bloqueados:
+                placeholders = ",".join(["?"] * len(bloqueados))
+                sql_ids = f"SELECT \"{id_col}\" FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" NOT IN ({placeholders}) AND {where_sql} {filtro_vacios} LIMIT ?"
+                cursor.execute(sql_ids, bloqueados + params)
+            else:
+                sql_ids = f"SELECT \"{id_col}\" FROM {TABLA_PRINCIPAL} WHERE {where_sql} {filtro_vacios} LIMIT ?"
+                cursor.execute(sql_ids, params)
+            ids_a_exportar = [row[0] for row in cursor.fetchall()]
 
         if not ids_a_exportar:
             cursor.execute("ROLLBACK")
@@ -333,9 +400,7 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
 
         # 2. Insertar inmediatamente en el historial para "bloquearlos"
         ahora = datetime.now()
-        data_to_insert = [(str(val_id), ahora) for val_id in ids_a_exportar]
-        cursor.executemany("INSERT OR IGNORE INTO hist.historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)", 
-                           data_to_insert)
+        gestor_h.registrar_multiples(ids_a_exportar, ahora)
         
         # 3. Commit de la reserva antes de generar el Excel
         conn.commit()
@@ -409,22 +474,32 @@ def importar_curps_manual():
 @app.get("/historial-resumen")
 def historial_resumen():
     """Devuelve resumen del historial de exportaciones."""
-    conn = sqlite3.connect(HISTORIAL_DB_PATH, timeout=10)
+    conn = gestor_h.get_connection()
     cursor = conn.cursor()
     try:
         # Total en historial
         cursor.execute("SELECT COUNT(*) FROM historial_exportacion")
         total = cursor.fetchone()[0]
         
-        # Últimas exportaciones agrupadas por fecha
-        cursor.execute("""
-            SELECT DATE(fecha_exportacion) as fecha, COUNT(*) as cantidad
-            FROM historial_exportacion
-            GROUP BY DATE(fecha_exportacion)
-            ORDER BY fecha DESC
-            LIMIT 20
-        """)
-        por_fecha = [{"fecha": row[0], "cantidad": row[1]} for row in cursor.fetchall()]
+        if gestor_h.is_postgres:
+            # Últimas exportaciones agrupadas por fecha (Postgres)
+            cursor.execute("""
+                SELECT fecha_exportacion::date as fecha, COUNT(*) as cantidad
+                FROM historial_exportacion
+                GROUP BY fecha_exportacion::date
+                ORDER BY fecha DESC
+                LIMIT 20
+            """)
+        else:
+            # SQLite
+            cursor.execute("""
+                SELECT DATE(fecha_exportacion) as fecha, COUNT(*) as cantidad
+                FROM historial_exportacion
+                GROUP BY DATE(fecha_exportacion)
+                ORDER BY fecha DESC
+                LIMIT 20
+            """)
+        por_fecha = [{"fecha": str(row[0]), "cantidad": row[1]} for row in cursor.fetchall()]
         
         # Últimos 10 CURPs exportados
         cursor.execute("""
@@ -438,7 +513,8 @@ def historial_resumen():
         return {
             "total_historial": total,
             "exportaciones_por_fecha": por_fecha,
-            "recientes": recientes
+            "recientes": recientes,
+            "modo": "PostgreSQL" if gestor_h.is_postgres else "SQLite"
         }
     except Exception as e:
         return {"error": str(e)}
