@@ -55,8 +55,11 @@ class GestorHistorial:
                 if not firebase_admin._apps:
                     cred = credentials.Certificate(firebase_path)
                     firebase_admin.initialize_app(cred)
-                self.db_fs = firestore.client()
-                print(f"[INIT] Firebase Firestore conectado (usando {firebase_path}).")
+                
+                # Usar base de datos 'acces' o la definida en env
+                db_id = os.getenv("FIREBASE_DATABASE_ID", "acces")
+                self.db_fs = firestore.client(database=db_id)
+                print(f"[INIT] Firebase Firestore conectado (DB: {db_id}, usando {firebase_path}).")
             except Exception as e:
                 print(f"[ALERTA] Error al inicializar Firebase: {e}. Usando SQLite.")
                 self.use_firebase = False
