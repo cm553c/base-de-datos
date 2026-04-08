@@ -463,21 +463,20 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
         nombre_archivo = f"{prefijo}_{fecha_str}.xlsx"
         
-        # Generar Excel en memoria (BytesIO) para evitar problemas de disco en Render
+        # Generar Excel en memoria (BytesIO)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False)
-        output.seek(0)
         
-        # Nombre del archivo para el header
-        headers = {
-            'Content-Disposition': f'attachment; filename="{nombre_archivo}"'
-        }
-        
-        return StreamingResponse(
-            output,
+        # Usar Response directa (en lugar de StreamingResponse) para asegurar que el navegador
+        # vea correctamente el nombre del archivo y la extensión.
+        return Response(
+            content=output.getvalue(),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers=headers
+            headers={
+                'Content-Disposition': f'attachment; filename="{nombre_archivo}"',
+                'Access-Control-Expose-Headers': 'Content-Disposition'
+            }
         )
     except HTTPException as he:
         raise he
