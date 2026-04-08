@@ -56,9 +56,10 @@ class GestorHistorial:
                     cred = credentials.Certificate(firebase_path)
                     firebase_admin.initialize_app(cred)
                 
-                # Usar base de datos 'acces' o la definida en env
+                # Importar cliente de Firestore directamente para soportar base de datos nombrada 'acces'
+                from google.cloud import firestore as g_firestore
                 db_id = os.getenv("FIREBASE_DATABASE_ID", "acces")
-                self.db_fs = firestore.client(database=db_id)
+                self.db_fs = g_firestore.Client(database=db_id)
                 print(f"[INIT] Firebase Firestore conectado (DB: {db_id}, usando {firebase_path}).")
             except Exception as e:
                 print(f"[ALERTA] Error al inicializar Firebase: {e}. Usando SQLite.")
@@ -85,11 +86,14 @@ class GestorHistorial:
 
     def registrar_multiples(self, ids, fecha):
         if self.use_firebase and self.db_fs:
-            batch = self.db_fs.batch()
-            for curp in ids:
-                doc_ref = self.db_fs.collection('historial_exportacion').document(str(curp))
-                batch.set(doc_ref, {'fecha_exportacion': fecha})
-            batch.commit()
+            # Firestore tiene un límite de 500 operaciones por lote
+            for i in range(0, len(ids), 500):
+                batch = self.db_fs.batch()
+                chunk = ids[i : i + 500]
+                for curp in chunk:
+                    doc_ref = self.db_fs.collection('historial_exportacion').document(str(curp))
+                    batch.set(doc_ref, {'fecha_exportacion': fecha})
+                batch.commit()
         else:
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -499,48 +503,53 @@ def importar_curps_manual():
 @app.get("/historial-resumen")
 def historial_resumen():
     """Devuelve resumen del historial de exportaciones."""
+    if gestor_h.use_firebase:
+        try:
+            # En Firebase, obtener total y recientes
+            # Nota: stream() es más eficiente para contar en lotes pequeños/medianos
+            docs = gestor_h.db_fs.collection('historial_exportacion').stream()
+            total = sum(1 for _ in docs)
+            
+            # Obtener últimos 10
+            recientes_docs = gestor_h.db_fs.collection('historial_exportacion').order_by('fecha_exportacion', direction=firestore.Query.DESCENDING).limit(10).stream()
+            recientes = [{"curp": doc.id, "fecha": str(doc.to_dict().get('fecha_exportacion'))} for doc in recientes_docs]
+            
+            return {
+                "total_historial": total,
+                "exportaciones_por_fecha": [], #Firestore no permite agrupaciones directas fácilmente
+                "recientes": recientes,
+                "modo": "Firebase"
+            }
+        except Exception as e:
+            return {"error": f"Error Firebase: {str(e)}", "modo": "Firebase (Error)"}
+    
+    # Fallback SQLite
     conn = gestor_h.get_connection()
     cursor = conn.cursor()
     try:
-        # Total en historial
         cursor.execute("SELECT COUNT(*) FROM historial_exportacion")
         total = cursor.fetchone()[0]
         
-        if gestor_h.use_firebase:
-            por_fecha = [] # Firestore no permite agrupaciones complejas fácilmente sin agregaciones
-        else:
-            # SQLite
-            cursor.execute("""
-                SELECT DATE(fecha_exportacion) as fecha, COUNT(*) as cantidad
-                FROM historial_exportacion
-                GROUP BY DATE(fecha_exportacion)
-                ORDER BY fecha DESC
-                LIMIT 20
-            """)
-            por_fecha = [{"fecha": str(row[0]), "cantidad": row[1]} for row in cursor.fetchall()]
+        cursor.execute("""
+            SELECT DATE(fecha_exportacion) as fecha, COUNT(*) as cantidad
+            FROM historial_exportacion
+            GROUP BY DATE(fecha_exportacion)
+            ORDER BY fecha DESC
+            LIMIT 20
+        """)
+        por_fecha = [{"fecha": str(row[0]), "cantidad": row[1]} for row in cursor.fetchall()]
         
-        # Últimos 10 CURPs exportados
-        if gestor_h.use_firebase:
-            # Obtener últimos 10 de Firestore
-            docs = gestor_h.db_fs.collection('historial_exportacion').order_by('fecha_exportacion', direction=firestore.Query.DESCENDING).limit(10).stream()
-            recientes = [{"curp": doc.id, "fecha": str(doc.to_dict().get('fecha_exportacion'))} for doc in docs]
-        else:
-            cursor.execute("""
-                SELECT registro_id, fecha_exportacion
-                FROM historial_exportacion
-                ORDER BY fecha_exportacion DESC
-                LIMIT 10
-            """)
-            recientes = [{"curp": row[0], "fecha": str(row[1])} for row in cursor.fetchall()]
+        cursor.execute("SELECT registro_id, fecha_exportacion FROM historial_exportacion ORDER BY fecha_exportacion DESC LIMIT 10")
+        recientes = [{"curp": row[0], "fecha": str(row[1])} for row in cursor.fetchall()]
         
         return {
             "total_historial": total,
             "exportaciones_por_fecha": por_fecha,
             "recientes": recientes,
-            "modo": "Firebase" if gestor_h.use_firebase else "SQLite"
+            "modo": "SQLite"
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "modo": "SQLite (Error)"}
     finally:
         conn.close()
 
