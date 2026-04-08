@@ -59,7 +59,8 @@ class GestorHistorial:
                 # Importar cliente de Firestore directamente para soportar base de datos nombrada 'acces'
                 from google.cloud import firestore as g_firestore
                 db_id = os.getenv("FIREBASE_DATABASE_ID", "acces")
-                self.db_fs = g_firestore.Client(database=db_id)
+                # ESENCIAL: Pasar las credenciales explícitamente para Render
+                self.db_fs = g_firestore.Client(database=db_id, credentials=cred.get_credential())
                 print(f"[INIT] Firebase Firestore conectado (DB: {db_id}, usando {firebase_path}).")
             except Exception as e:
                 print(f"[ALERTA] Error al inicializar Firebase: {e}. Usando SQLite.")
