@@ -38,17 +38,25 @@ TABLA_PRINCIPAL = '"Aguscalientes 19"'
 class GestorHistorial:
     def __init__(self, db_url):
         self.db_url = db_url
-        self.use_firebase = os.path.exists(FIREBASE_KEY_PATH)
+        # Probar varias rutas para el archivo de credenciales (Local y Render Secrets)
+        rutas_posibles = [
+            FIREBASE_KEY_PATH,
+            os.path.join(BASE_DIR, "firebase_key.json"),
+            "/etc/secrets/firebase_key.json"
+        ]
+        
+        firebase_path = next((p for p in rutas_posibles if os.path.exists(p)), None)
+        self.use_firebase = firebase_path is not None
         self.db_fs = None
         
         if self.use_firebase and firebase_admin:
             try:
                 # Inicializar Firebase
                 if not firebase_admin._apps:
-                    cred = credentials.Certificate(FIREBASE_KEY_PATH)
+                    cred = credentials.Certificate(firebase_path)
                     firebase_admin.initialize_app(cred)
                 self.db_fs = firestore.client()
-                print("[INIT] Firebase Firestore conectado correctamente.")
+                print(f"[INIT] Firebase Firestore conectado (usando {firebase_path}).")
             except Exception as e:
                 print(f"[ALERTA] Error al inicializar Firebase: {e}. Usando SQLite.")
                 self.use_firebase = False
