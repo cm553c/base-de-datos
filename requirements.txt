@@ -4,4 +4,4 @@ pandas
 sqlalchemy
 python-multipart
 openpyxl
-psycopg2-binary
+firebase-admin

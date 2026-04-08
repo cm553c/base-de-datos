@@ -12,10 +12,10 @@ import glob
 import openpyxl
 from fastapi.responses import StreamingResponse
 try:
-    import psycopg2
-    from psycopg2 import sql
+    import firebase_admin
+    from firebase_admin import credentials, firestore
 except ImportError:
-    psycopg2 = None
+    firebase_admin = None
 
 app = FastAPI(title="API de Búsqueda Aguascalientes v2", description="Servidor avanzado con filtros y exportación")
 
@@ -32,71 +32,76 @@ app.add_middleware(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.getenv("DATABASE_URL", os.path.join(BASE_DIR, "datos_busqueda.sqlite"))
 HISTORIAL_DB_PATH = os.getenv("HISTORIAL_DATABASE_URL", os.path.join(BASE_DIR, "historial_perpetuo.sqlite"))
+FIREBASE_KEY_PATH = os.getenv("FIREBASE_KEY_PATH", os.path.join(BASE_DIR, "firebase_key.json"))
 TABLA_PRINCIPAL = '"Aguscalientes 19"'
 
 class GestorHistorial:
     def __init__(self, db_url):
         self.db_url = db_url
-        self.is_postgres = db_url.startswith("postgres://") or db_url.startswith("postgresql://")
-        if self.is_postgres and not psycopg2:
-            print("[ALERTA] PostgreSQL configurado pero psycopg2 no está instalado. Usando SQLite por defecto.")
-            self.is_postgres = False
+        self.use_firebase = os.path.exists(FIREBASE_KEY_PATH)
+        self.db_fs = None
+        
+        if self.use_firebase and firebase_admin:
+            try:
+                # Inicializar Firebase
+                if not firebase_admin._apps:
+                    cred = credentials.Certificate(FIREBASE_KEY_PATH)
+                    firebase_admin.initialize_app(cred)
+                self.db_fs = firestore.client()
+                print("[INIT] Firebase Firestore conectado correctamente.")
+            except Exception as e:
+                print(f"[ALERTA] Error al inicializar Firebase: {e}. Usando SQLite.")
+                self.use_firebase = False
 
     def get_connection(self):
-        if self.is_postgres:
-            # Reemplazar postgres:// por postgresql:// por compatibilidad con SQLAlchemy/Psycorp2
-            url = self.db_url.replace("postgres://", "postgresql://")
-            return psycopg2.connect(url)
-        else:
-            return sqlite3.connect(self.db_url)
+        # Solo para modo SQLite
+        return sqlite3.connect(self.db_url)
 
     def inicializar(self):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
-            if self.is_postgres:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS historial_exportacion (
-                        registro_id TEXT PRIMARY KEY,
-                        fecha_exportacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-            else:
+        if not self.use_firebase:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            try:
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS historial_exportacion (
                         registro_id TEXT PRIMARY KEY,
                         fecha_exportacion DATETIME
                     )
                 """)
-            conn.commit()
-        finally:
-            conn.close()
+                conn.commit()
+            finally:
+                conn.close()
 
     def registrar_multiples(self, ids, fecha):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
-            if self.is_postgres:
-                # PostgreSQL use ON CONFLICT
-                query = "INSERT INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (%s, %s) ON CONFLICT (registro_id) DO NOTHING"
-                data = [(str(vid), fecha) for vid in ids]
-                cursor.executemany(query, data)
-            else:
+        if self.use_firebase and self.db_fs:
+            batch = self.db_fs.batch()
+            for curp in ids:
+                doc_ref = self.db_fs.collection('historial_exportacion').document(str(curp))
+                batch.set(doc_ref, {'fecha_exportacion': fecha})
+            batch.commit()
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            try:
                 query = "INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)"
                 data = [(str(vid), fecha) for vid in ids]
                 cursor.executemany(query, data)
-            conn.commit()
-        finally:
-            conn.close()
+                conn.commit()
+            finally:
+                conn.close()
 
     def obtener_ids_bloqueados(self):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT registro_id FROM historial_exportacion")
-            return [row[0] for row in cursor.fetchall()]
-        finally:
-            conn.close()
+        if self.use_firebase and self.db_fs:
+            docs = self.db_fs.collection('historial_exportacion').stream()
+            return [doc.id for doc in docs]
+        else:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT registro_id FROM historial_exportacion")
+                return [row[0] for row in cursor.fetchall()]
+            finally:
+                conn.close()
 
 gestor_h = GestorHistorial(HISTORIAL_DB_PATH)
 
@@ -106,10 +111,10 @@ def inicializar_db():
     conn_busqueda.execute("PRAGMA journal_mode=WAL")
     conn_busqueda.close()
 
-    # 2. Inicializar DB de historial (SQLite o Postgres)
+    # 2. Inicializar DB de historial (SQLite o Firebase)
     gestor_h.inicializar()
     
-    print(f"[INIT] Bases de datos inicializadas. Modo historial: {'PostgreSQL' if gestor_h.is_postgres else 'SQLite'}")
+    print(f"[INIT] Bases de datos inicializadas. Modo historial: {'Firebase' if gestor_h.use_firebase else 'SQLite'}")
     
     # 3. Sincronizar automáticamente con archivos Excel al arrancar
     try:
@@ -198,22 +203,24 @@ def obtener_estadisticas():
         total_base = cursor.fetchone()[0]
         
         # Total de PERSONAS que ya han sido exportadas
-        if not gestor_h.is_postgres:
+        if not gestor_h.use_firebase:
             cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
             sql_usados = f"SELECT COUNT(*) FROM {TABLA_PRINCIPAL} t INNER JOIN hist.historial_exportacion h ON t.\"{id_col}\" = h.registro_id"
             cursor.execute(sql_usados)
             total_usados = cursor.fetchone()[0]
         else:
-            # En Postgres, traemos los IDs y filtramos (o contamos directamente si es factible)
+            # En Firebase, traemos los IDs y filtramos
             bloqueados = gestor_h.obtener_ids_bloqueados()
             c_bloqueados = len(bloqueados)
-            # Para mayor precisión con la tabla actual:
-            if c_bloqueados < 10000:
-                placeholders = ",".join(["?"] * c_bloqueados)
-                cursor.execute(f"SELECT COUNT(*) FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" IN ({placeholders})", bloqueados)
-                total_usados = cursor.fetchone()[0]
+            if c_bloqueados > 0:
+                if c_bloqueados < 1000:
+                    placeholders = ",".join(["?"] * c_bloqueados)
+                    cursor.execute(f"SELECT COUNT(*) FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" IN ({placeholders})", bloqueados)
+                    total_usados = cursor.fetchone()[0]
+                else:
+                    total_usados = c_bloqueados # Aproximación si hay demasiados para SQLite IN
             else:
-                total_usados = c_bloqueados # Aproximación si hay demasiados
+                total_usados = 0
 
         # Tamaño del archivo para diagnóstico
         db_size_mb = os.path.getsize(DB_PATH) / (1024 * 1024)
@@ -270,7 +277,7 @@ def buscar(q: str = Query(None), sexo: str = None, edad: str = None):
         where_sql = " AND ".join(condiciones_con_prefijo) if condiciones_con_prefijo else "1=1"
 
         # SQL que excluye ya exportados
-        if not gestor_h.is_postgres:
+        if not gestor_h.use_firebase:
             cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
             sql = f"""
                 SELECT t.* FROM {TABLA_PRINCIPAL} t
@@ -283,8 +290,15 @@ def buscar(q: str = Query(None), sexo: str = None, edad: str = None):
             bloqueados = gestor_h.obtener_ids_bloqueados()
             if bloqueados:
                 placeholders = ",".join(["?"] * len(bloqueados))
-                sql = f"SELECT * FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" NOT IN ({placeholders}) AND {where_sql} LIMIT 100"
-                cursor.execute(sql, bloqueados + params)
+                # Nota: SQLite tiene un límite de 999 parámetros. Si hay más, esto fallará.
+                # Para un control real con >999, usaríamos una tabla temporal.
+                if len(bloqueados) < 999:
+                    sql = f"SELECT * FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" NOT IN ({placeholders}) AND {where_sql} LIMIT 100"
+                    cursor.execute(sql, bloqueados + params)
+                else:
+                    # Fallback simple para evitar error de parámetros
+                    sql = f"SELECT * FROM {TABLA_PRINCIPAL} WHERE {where_sql} LIMIT 100"
+                    cursor.execute(sql, params)
             else:
                 sql = f"SELECT * FROM {TABLA_PRINCIPAL} WHERE {where_sql} LIMIT 100"
                 cursor.execute(sql, params)
@@ -368,7 +382,7 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
         cursor.execute("BEGIN TRANSACTION")
         
         # Primero identificamos los IDs que se van a exportar
-        if not gestor_h.is_postgres:
+        if not gestor_h.use_firebase:
             cursor.execute(f"ATTACH DATABASE '{HISTORIAL_DB_PATH}' AS hist")
             sql_ids = f"""
                 SELECT t."{id_col}" FROM {TABLA_PRINCIPAL} t
@@ -382,7 +396,7 @@ def exportar(q: str = None, sexo: str = None, edad: str = None, limite: int = 50
             ids_a_exportar = [row[0] for row in cursor.fetchall()]
         else:
             bloqueados = gestor_h.obtener_ids_bloqueados()
-            if bloqueados:
+            if bloqueados and len(bloqueados) < 999:
                 placeholders = ",".join(["?"] * len(bloqueados))
                 sql_ids = f"SELECT \"{id_col}\" FROM {TABLA_PRINCIPAL} WHERE \"{id_col}\" NOT IN ({placeholders}) AND {where_sql} {filtro_vacios} LIMIT ?"
                 cursor.execute(sql_ids, bloqueados + params)
@@ -481,15 +495,8 @@ def historial_resumen():
         cursor.execute("SELECT COUNT(*) FROM historial_exportacion")
         total = cursor.fetchone()[0]
         
-        if gestor_h.is_postgres:
-            # Últimas exportaciones agrupadas por fecha (Postgres)
-            cursor.execute("""
-                SELECT fecha_exportacion::date as fecha, COUNT(*) as cantidad
-                FROM historial_exportacion
-                GROUP BY fecha_exportacion::date
-                ORDER BY fecha DESC
-                LIMIT 20
-            """)
+        if gestor_h.use_firebase:
+            por_fecha = [] # Firestore no permite agrupaciones complejas fácilmente sin agregaciones
         else:
             # SQLite
             cursor.execute("""
@@ -499,22 +506,27 @@ def historial_resumen():
                 ORDER BY fecha DESC
                 LIMIT 20
             """)
-        por_fecha = [{"fecha": str(row[0]), "cantidad": row[1]} for row in cursor.fetchall()]
+            por_fecha = [{"fecha": str(row[0]), "cantidad": row[1]} for row in cursor.fetchall()]
         
         # Últimos 10 CURPs exportados
-        cursor.execute("""
-            SELECT registro_id, fecha_exportacion
-            FROM historial_exportacion
-            ORDER BY fecha_exportacion DESC
-            LIMIT 10
-        """)
-        recientes = [{"curp": row[0], "fecha": str(row[1])} for row in cursor.fetchall()]
+        if gestor_h.use_firebase:
+            # Obtener últimos 10 de Firestore
+            docs = gestor_h.db_fs.collection('historial_exportacion').order_by('fecha_exportacion', direction=firestore.Query.DESCENDING).limit(10).stream()
+            recientes = [{"curp": doc.id, "fecha": str(doc.to_dict().get('fecha_exportacion'))} for doc in docs]
+        else:
+            cursor.execute("""
+                SELECT registro_id, fecha_exportacion
+                FROM historial_exportacion
+                ORDER BY fecha_exportacion DESC
+                LIMIT 10
+            """)
+            recientes = [{"curp": row[0], "fecha": str(row[1])} for row in cursor.fetchall()]
         
         return {
             "total_historial": total,
             "exportaciones_por_fecha": por_fecha,
             "recientes": recientes,
-            "modo": "PostgreSQL" if gestor_h.is_postgres else "SQLite"
+            "modo": "Firebase" if gestor_h.use_firebase else "SQLite"
         }
     except Exception as e:
         return {"error": str(e)}
