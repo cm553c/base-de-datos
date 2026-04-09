@@ -90,39 +90,30 @@ function App() {
 
             const response = await axios.get(`${API_URL}/exportar`, {
                 params: { q: query || '', sexo: filtros.sexo, edad: filtros.edad, limite: limite, solo_curp: soloCurp },
-                responseType: 'arraybuffer'
+                responseType: 'blob'
             });
 
-            // ⚠️ CLAVE: Verificar que la respuesta sea Excel antes de descargar
-            const contentType = response.headers['content-type'] || '';
-            const isExcel = contentType.includes('spreadsheet') || contentType.includes('octet-stream') || contentType.includes('excel');
-
-            if (!isExcel) {
-                // La respuesta es JSON (probablemente un error del servidor disfrazado de éxito)
-                const text = new TextDecoder().decode(response.data);
-                try {
-                    const json = JSON.parse(text);
-                    alert(`AVISO: ${json.detail || 'Sin registros nuevos. Cambia los filtros o resetea el historial.'}`);
-                } catch {
-                    alert('Error: El servidor no devolvió un archivo Excel válido.');
+            // Intentar obtener el nombre del archivo del encabezado del servidor
+            let fileName = nombreArchivo;
+            const contentDisposition = response.headers['content-disposition'];
+            if (contentDisposition) {
+                const fileNameMatch = contentDisposition.match(/filename="?([^"]*)"?/);
+                if (fileNameMatch && fileNameMatch[1]) {
+                    fileName = fileNameMatch[1];
                 }
-                return;
             }
 
-            // Crear el Blob con el tipo MIME de Excel correcto
-            const blob = new Blob([response.data], {
-                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            });
-
-            // El atributo link.download sobreescribe el nombre del servidor
-            const url = window.URL.createObjectURL(blob);
+            // Crear el enlace de descarga
+            const url = window.URL.createObjectURL(new Blob([response.data]));
             const link = document.createElement('a');
             link.href = url;
-            link.download = nombreArchivo;
+            link.setAttribute('download', fileName);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             window.URL.revokeObjectURL(url);
+
+            alert(`✅ Descargado como: ${fileName}`);
 
             alert(`✅ Descargado como: ${nombreArchivo}`);
             // Actualizar estadísticas y historial después de exportar
