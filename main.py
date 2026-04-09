@@ -71,19 +71,19 @@ class GestorHistorial:
         return sqlite3.connect(self.db_url)
 
     def inicializar(self):
-        if not self.use_firebase:
-            conn = self.get_connection()
-            cursor = conn.cursor()
-            try:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS historial_exportacion (
-                        registro_id TEXT PRIMARY KEY,
-                        fecha_exportacion DATETIME
-                    )
-                """)
-                conn.commit()
-            finally:
-                conn.close()
+        # Siempre inicializar SQLite como respaldo
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS historial_exportacion (
+                    registro_id TEXT PRIMARY KEY,
+                    fecha_exportacion DATETIME
+                )
+            """)
+            conn.commit()
+        finally:
+            conn.close()
 
     def registrar_multiples(self, ids, fecha):
         # 1. Intentar en Firebase si está activo
