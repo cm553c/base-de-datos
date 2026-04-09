@@ -79,63 +79,29 @@ function App() {
     const handleExportar = async (soloCurp = false) => {
         setExportando(true);
         try {
-            // Construimos el nombre en el cliente, sin depender de encabezados del servidor
-            const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-            const hora = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
-            const genero = filtros.sexo === 'H' ? 'Hombre' : (filtros.sexo === 'M' ? 'Mujer' : '');
-            const infoSexo = genero ? `_${genero}` : '';
-            const infoEdad = filtros.edad ? `_Edad${filtros.edad}` : '';
-            const tipo = soloCurp ? 'SoloCURP' : 'Exportacion';
-            const nombreArchivo = `${tipo}${infoSexo}${infoEdad}_${fecha}_${hora}.xlsx`;
-
-            const response = await axios.get(`${API_URL}/exportar`, {
-                params: { q: query || '', sexo: filtros.sexo, edad: filtros.edad, limite: limite, solo_curp: soloCurp },
-                responseType: 'blob'
+            // Usar descarga directa para asegurar que el navegador respete el nombre del archivo del servidor
+            const params = new URLSearchParams({
+                q: query || '',
+                sexo: filtros.sexo,
+                edad: filtros.edad,
+                limite: limite,
+                solo_curp: soloCurp
             });
 
-            // Intentar obtener el nombre del archivo del encabezado del servidor
-            let fileName = nombreArchivo;
-            const contentDisposition = response.headers['content-disposition'];
-            if (contentDisposition) {
-                const fileNameMatch = contentDisposition.match(/filename="?([^"]*)"?/);
-                if (fileNameMatch && fileNameMatch[1]) {
-                    fileName = fileNameMatch[1];
-                }
-            }
+            const exportUrl = `${API_URL}/exportar?${params.toString()}`;
 
-            // Crear el enlace de descarga
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', fileName);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
+            // Abrir en una nueva pestaña/ventana para iniciar la descarga nativa
+            window.open(exportUrl, '_blank');
 
-            alert(`✅ Descargado como: ${fileName}`);
-            // Actualizar estadísticas y historial después de exportar
-            obtenerEstadisticas();
-            obtenerHistorial();
+            // Pequeña pausa para que el servidor registre la exportación antes de refrescar
+            setTimeout(() => {
+                obtenerEstadisticas();
+                obtenerHistorial();
+                setExportando(false);
+            }, 2000);
+
         } catch (err) {
-            // Manejar errores que vienen como arraybuffer
-            if (err.response?.data instanceof ArrayBuffer) {
-                const text = new TextDecoder().decode(err.response.data);
-                try {
-                    const json = JSON.parse(text);
-                    const msg = json.detail || 'Error del servidor';
-                    if (err.response.status === 404) {
-                        alert(`AVISO: ${msg}\n\nCambia los filtros o usa "Resetear historial" para volver a exportar los mismos.`);
-                    } else {
-                        alert(`Error: ${msg}`);
-                    }
-                } catch {
-                    alert(`Error: ${err.message}`);
-                }
-            } else {
-                alert(`Error: ${err.response?.data?.detail || err.message || 'Error desconocido'}`);
-            }
-        } finally {
+            alert(`Error al exportar: ${err.message}`);
             setExportando(false);
         }
     };
