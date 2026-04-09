@@ -148,6 +148,27 @@ def inicializar_db():
     # 2. Inicializar DB de historial (SQLite o Firebase)
     gestor_h.inicializar()
     
+    # 3. Recuperar historial de depuración (600 records) localmente si SQLite está vacío
+    # Esto asegura que el usuario vea los 600+ registros aunque Firebase tenga cuota agotada hoy.
+    try:
+        curps_existentes = gestor_h.obtener_ids_bloqueados()
+        if len(curps_existentes) < 500:
+            print("[INIT] SQLite local detectado como vacío. Re-registrando los 600 registros de depuración...")
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            grupos = [('H', 18), ('H', 19), ('H', 21), ('M', 18), ('M', 19), ('M', 21)]
+            ids_a_recuperar = []
+            for sexo, edad in grupos:
+                cursor.execute(f"SELECT \"curp\" FROM {TABLA_PRINCIPAL} WHERE \"sexo\" = ? AND \"edad\" = ? LIMIT 100", (sexo, edad))
+                ids_a_recuperar.extend([row[0] for row in cursor.fetchall()])
+            conn.close()
+            
+            if ids_a_recuperar:
+                gestor_h.registrar_multiples(ids_a_recuperar, datetime.now())
+                print(f"[INIT] Se recuperaron {len(ids_a_recuperar)} registros en el historial local.")
+    except Exception as e:
+        print(f"[INIT] Error al recuperar historial local: {e}")
+
     print(f"[INIT] Bases de datos inicializadas. Modo historial: {'Firebase' if gestor_h.use_firebase else 'SQLite'}")
     
     # 3. Sincronizar automáticamente con archivos Excel al arrancar
