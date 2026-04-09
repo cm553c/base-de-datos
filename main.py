@@ -541,62 +541,53 @@ def importar_curps_manual():
 
 @app.get("/historial-resumen")
 def historial_resumen():
-    """Devuelve resumen del historial de exportaciones."""
+    """Devuelve resumen del historial de exportaciones combinando nube y local."""
+    total_final = 0
+    recientes_final = []
+    modo_final = "SQLite"
+
+    # 1. Intentar con Firebase
     if gestor_h.use_firebase:
         try:
-            # En Firebase, obtener total y recientes
             # OPTIMIZACIÓN: Solo leer si no hay fallo de cuota previo
             docs = gestor_h.db_fs.collection('historial_exportacion').stream()
-            # Esta operación consume cuota de lectura (1 por documento)
-            # Para 50k documentos, esto mataría la cuota en un día
-            # Por ahora, como son pocos (<1000), sigue funcionando
             curps_ids = [doc.id for doc in docs]
-            total = len(curps_ids)
-            
-            # Obtener últimos 10
-            recientes_docs = gestor_h.db_fs.collection('historial_exportacion').order_by('fecha_exportacion', direction=firestore.Query.DESCENDING).limit(10).stream()
-            recientes = [{"curp": doc.id, "fecha": str(doc.to_dict().get('fecha_exportacion'))} for doc in recientes_docs]
-            
-            return {
-                "total_historial": total,
-                "exportaciones_por_fecha": [],
-                "recientes": recientes,
-                "modo": "Firebase"
-            }
+            if len(curps_ids) > 0:
+                total_final = len(curps_ids)
+                modo_final = "Firebase"
+                # Obtener últimos 10 de Firebase
+                recientes_docs = gestor_h.db_fs.collection('historial_exportacion').order_by('fecha_exportacion', direction=firestore.Query.DESCENDING).limit(10).stream()
+                recientes_final = [{"curp": doc.id, "fecha": str(doc.to_dict().get('fecha_exportacion'))} for doc in recientes_docs]
         except Exception as e:
-            print(f"[STATS FIREBASE ERROR] {e}")
-            # Si falla Firebase (por cuota o red), mostrar SQLite sin asustar al usuario
-            pass
+            print(f"[STATS FIREBASE ERROR] Fallo lectura de nube: {e}")
+            modo_final = "SQLite (Respaldo)"
     
-    # Fallback SQLite
+    # 2. Si Firebase falló o tiene menos datos que el local (por cuota), usar local
     conn = gestor_h.get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT COUNT(*) FROM historial_exportacion")
-        total = cursor.fetchone()[0]
+        total_local = cursor.fetchone()[0]
         
-        cursor.execute("""
-            SELECT DATE(fecha_exportacion) as fecha, COUNT(*) as cantidad
-            FROM historial_exportacion
-            GROUP BY DATE(fecha_exportacion)
-            ORDER BY fecha DESC
-            LIMIT 20
-        """)
-        por_fecha = [{"fecha": str(row[0]), "cantidad": row[1]} for row in cursor.fetchall()]
-        
-        cursor.execute("SELECT registro_id, fecha_exportacion FROM historial_exportacion ORDER BY fecha_exportacion DESC LIMIT 10")
-        recientes = [{"curp": row[0], "fecha": str(row[1])} for row in cursor.fetchall()]
-        
-        return {
-            "total_historial": total,
-            "exportaciones_por_fecha": por_fecha,
-            "recientes": recientes,
-            "modo": "SQLite"
-        }
+        # Si el local tiene más (o Firebase falló), priorizamos local para el total
+        if total_local >= total_final:
+            total_final = total_local
+            # También refrescar recientes si el local es más rico
+            cursor.execute("SELECT registro_id, fecha_exportacion FROM historial_exportacion ORDER BY fecha_exportacion DESC LIMIT 10")
+            local_recientes = [{"curp": row[0], "fecha": str(row[1])} for row in cursor.fetchall()]
+            if not recientes_final or total_local > 10:
+                recientes_final = local_recientes
     except Exception as e:
-        return {"error": str(e), "modo": "SQLite (Error)"}
+        print(f"[STATS SQLITE ERROR] {e}")
     finally:
         conn.close()
+
+    return {
+        "total_historial": total_final,
+        "exportaciones_por_fecha": [],
+        "recientes": recientes_final,
+        "modo": modo_final
+    }
 
 if __name__ == "__main__":
     import uvicorn
