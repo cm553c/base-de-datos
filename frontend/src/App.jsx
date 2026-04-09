@@ -114,8 +114,6 @@ function App() {
             window.URL.revokeObjectURL(url);
 
             alert(`✅ Descargado como: ${fileName}`);
-
-            alert(`✅ Descargado como: ${nombreArchivo}`);
             // Actualizar estadísticas y historial después de exportar
             obtenerEstadisticas();
             obtenerHistorial();
