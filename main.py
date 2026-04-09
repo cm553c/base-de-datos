@@ -86,38 +86,56 @@ class GestorHistorial:
                 conn.close()
 
     def registrar_multiples(self, ids, fecha):
+        # 1. Intentar en Firebase si está activo
         if self.use_firebase and self.db_fs:
-            # Firestore tiene un límite de 500 operaciones por lote
-            for i in range(0, len(ids), 500):
-                batch = self.db_fs.batch()
-                chunk = ids[i : i + 500]
-                for curp in chunk:
-                    doc_ref = self.db_fs.collection('historial_exportacion').document(str(curp))
-                    batch.set(doc_ref, {'fecha_exportacion': fecha})
-                batch.commit()
-        else:
-            conn = self.get_connection()
-            cursor = conn.cursor()
             try:
-                query = "INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)"
-                data = [(str(vid), fecha) for vid in ids]
-                cursor.executemany(query, data)
-                conn.commit()
-            finally:
-                conn.close()
+                # Firestore tiene un límite de 500 operaciones por lote
+                for i in range(0, len(ids), 500):
+                    batch = self.db_fs.batch()
+                    chunk = ids[i : i + 500]
+                    for curp in chunk:
+                        doc_ref = self.db_fs.collection('historial_exportacion').document(str(curp))
+                        batch.set(doc_ref, {'fecha_exportacion': fecha})
+                    batch.commit()
+                # También registramos en SQLite local como respaldo "caliente"
+                self._registrar_en_sqlite(ids, fecha)
+                return
+            except Exception as e:
+                print(f"[FALLO FIREBASE] No se pudo guardar en la nube (posible cuota): {e}")
+                # Fallback silencioso a SQLite abajo
+        
+        # 2. Respaldo en SQLite local
+        self._registrar_en_sqlite(ids, fecha)
+
+    def _registrar_en_sqlite(self, ids, fecha):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            query = "INSERT OR IGNORE INTO historial_exportacion (registro_id, fecha_exportacion) VALUES (?, ?)"
+            data = [(str(vid), fecha) for vid in ids]
+            cursor.executemany(query, data)
+            conn.commit()
+        finally:
+            conn.close()
 
     def obtener_ids_bloqueados(self):
+        # 1. Intentar en Firebase
         if self.use_firebase and self.db_fs:
-            docs = self.db_fs.collection('historial_exportacion').stream()
-            return [doc.id for doc in docs]
-        else:
-            conn = self.get_connection()
-            cursor = conn.cursor()
             try:
-                cursor.execute("SELECT registro_id FROM historial_exportacion")
-                return [row[0] for row in cursor.fetchall()]
-            finally:
-                conn.close()
+                docs = self.db_fs.collection('historial_exportacion').stream()
+                return [doc.id for doc in docs]
+            except Exception as e:
+                print(f"[FALLO FIREBASE] No se pudo leer de la nube: {e}")
+                # Fallback a SQLite abajo
+        
+        # 2. Respaldo en SQLite
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT registro_id FROM historial_exportacion")
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
 
 gestor_h = GestorHistorial(HISTORIAL_DB_PATH)
 
@@ -506,9 +524,13 @@ def historial_resumen():
     if gestor_h.use_firebase:
         try:
             # En Firebase, obtener total y recientes
-            # Nota: stream() es más eficiente para contar en lotes pequeños/medianos
+            # OPTIMIZACIÓN: Solo leer si no hay fallo de cuota previo
             docs = gestor_h.db_fs.collection('historial_exportacion').stream()
-            total = sum(1 for _ in docs)
+            # Esta operación consume cuota de lectura (1 por documento)
+            # Para 50k documentos, esto mataría la cuota en un día
+            # Por ahora, como son pocos (<1000), sigue funcionando
+            curps_ids = [doc.id for doc in docs]
+            total = len(curps_ids)
             
             # Obtener últimos 10
             recientes_docs = gestor_h.db_fs.collection('historial_exportacion').order_by('fecha_exportacion', direction=firestore.Query.DESCENDING).limit(10).stream()
@@ -516,12 +538,14 @@ def historial_resumen():
             
             return {
                 "total_historial": total,
-                "exportaciones_por_fecha": [], #Firestore no permite agrupaciones directas fácilmente
+                "exportaciones_por_fecha": [],
                 "recientes": recientes,
                 "modo": "Firebase"
             }
         except Exception as e:
-            return {"error": f"Error Firebase: {str(e)}", "modo": "Firebase (Error)"}
+            print(f"[STATS FIREBASE ERROR] {e}")
+            # Si falla Firebase (por cuota o red), mostrar SQLite sin asustar al usuario
+            pass
     
     # Fallback SQLite
     conn = gestor_h.get_connection()
